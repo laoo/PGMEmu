@@ -45,37 +45,41 @@ The emulator runs a cartridge as its image holds it ([0014](../decisions/0014-im
 
 ## What comparing with the RTL shows today
 
-`scripts/compare-with-rtl.py` runs the same requests on both.
+`scripts/compare-with-rtl.py` runs the same requests on both. The simulation is the core at
+MiSTer-devel's `6f757e4`, which arbitrates VRAM afresh, caches more of the 68000's ROM and changes
+the ICS2115's IRQs; the emulator's modules that cite an earlier commit are still the earlier RTL.
 
-- **The BIOS alone:** work RAM, VRAM, palette RAM and the picture are identical at frames 60
-  and 600. Its jingle, recorded from the reset to frame 800, is identical sample for sample,
-  441,753 frames of it; the Z80's RAM differs in dead stack only.
+- **The BIOS alone:** VRAM, palette RAM and the picture are identical at frames 60 and 600; work
+  RAM differs in dead stack only. Its jingle, recorded from the reset to frame 800, is identical
+  sample for sample, 441,754 frames of it; the Z80's RAM differs in dead stack only.
 - **orlegend:** VRAM, palette RAM and the picture are identical at frames 300, 900, 1200 and
-  1500; work RAM is identical at 300 and 900, and later differs in dead stack only.
+  1500; work RAM differs in dead stack only.
 - **orlegend's sound:** from the reset to frame 1200, 20 seconds of attract, identical sample
-  for sample.
+  for sample until 19.8 s, after which 8,940 of the last 9,181 frames differ.
 - **PGMTest's sound pages:** `z80_ctrl`, `z80_sound_test`, `z80_ics_test` and
   `ics2115_vol_pan` match the RTL at frame 360 in the Z80's RAM (dead stack aside), VRAM,
   palette RAM and the picture, with their sounds played through `--press`. `z80_sound_test`'s
   sound is identical sample for sample; `z80_ics_test`'s and `ics2115_vol_pan`'s are identical
-  but begin 21 and 29 samples early, for the reason in the table above.
-- **PGMTest's video pages:** `bg_test`, `sprite_test`, `video_timing` and `system_basics` match
-  the RTL picture pixel for pixel. `fg_test` differs in its rightmost column, for the reason in
-  the table above.
+  but begin 17 and 24 samples early, for the reason in the table above.
+- **PGMTest's video pages:** `bg_test`, `sprite_test` and `video_timing` match the RTL picture
+  pixel for pixel. `fg_test` differs in its rightmost column, for the reason in the table above.
+  `system_basics` differs in rows 99-118, where the simulation shows scattered pixels the
+  emulator does not draw. The pages' work RAM, which holds what they measured, differs in a few
+  bytes.
 - **The Killing Blade and Dragon World 3:** their games first reach the IGS025 at frame 767. At
   frame 1100, past their start-up exchanges with it and the IGS022 and into their warning
-  screens, VRAM, palette RAM and the picture are identical; work RAM is identical in killbld,
-  and differs in dead stack only in drgw3.
+  screens, VRAM, palette RAM and the picture are identical; work RAM differs in dead stack, and
+  in killbld in one word above the stack pointer, at 0x81FF80.
 - **Knights of Valour Super Heroes:** its game first reaches the IGS027A at frame 762. At frame
-  1100 VRAM, palette RAM and the picture are identical; work RAM differs in dead stack and in five
-  bytes of the game's at 0x81B0C4-0x81B0C9, each 2 lower than the RTL's.
+  1100 VRAM, palette RAM and the picture are identical; work RAM differs in dead stack and in 11
+  bytes of the game's: 0x81B0C4-0x81B0C9 are 2 higher than the RTL's, which earlier RTL had 2
+  higher still, and single bytes or words at 0x8061B3, 0x806FC8, 0x80DC58 and 0x81647F.
 - **Dead stack:** bytes below the stack pointer hold what interrupts pushed earlier, and differ
   wherever an interrupt arrived at a different instruction. `--ignore` leaves them out; orlegend's
   stack reaches down to 0x81F000, and the BIOS's sound driver's down from 0x3FE1 in the Z80's
   RAM.
 
 Timing checkpoints in the BIOS's boot still show the emulator running some loops about 0.03 %
-faster than the RTL, mostly while it copies ROM into the Z80's RAM and verifies it. Since the
-interrupt acknowledge's E-clock wait (`M68k::willInterrupt`) and the text layer's VRAM window
-were modelled, no tested outcome depends on it; the open question on
-[timing drift](../open-questions.md) keeps it in view.
+faster than the RTL, mostly while it copies ROM into the Z80's RAM and verifies it. Against
+`6f757e4` interrupts land at different instructions, so dead stack differs where it matched
+before; the open question on [timing drift](../open-questions.md) keeps it in view.
