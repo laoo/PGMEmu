@@ -58,11 +58,11 @@
     "end": {
       "frame": 377,
       "picture": "06eda8a9",
-      "work_ram": "8dca40cf",
+      "work_ram": "74d98d97",
       "video_ram": "155d6600",
       "palette_ram": "680f2b38",
-      "audio_ram": "87ed11dc",
-      "sound": "9b399536"
+      "audio_ram": "5dc03989",
+      "sound": "8ed7ae7f"
     }
   }
 }

@@ -100,11 +100,11 @@
     "end": {
       "frame": 405,
       "picture": "8c110625",
-      "work_ram": "63000efa",
+      "work_ram": "00f8a122",
       "video_ram": "b39a1a09",
       "palette_ram": "680f2b38",
       "audio_ram": "b164efb1",
-      "sound": "b032c50d"
+      "sound": "c613cdf5"
     }
   }
 }

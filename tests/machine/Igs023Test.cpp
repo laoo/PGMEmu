@@ -133,3 +133,43 @@ TEST_CASE( "palette RAM holds 4K words in the 68000's byte order, mirrored", "[m
   REQUIRE( video.palette()[3] == 0xff );
   REQUIRE( readWord( video, 0, 0xa02002 ) == 0x7fff );
 }
+
+TEST_CASE( "the 68000 has VRAM in the vertical blank, and on fetched lines in its share of each microcycle",
+           "[machine][igs023]" )
+{
+  Chip chip;
+  // In master ticks: line 100's fetch locks VRAM from dot 638 for the text
+  // layer's 685 ticks, then for the background's head start of 47 dots at
+  // scroll 0, to tick 324111, the first of a microcycle.
+  constexpr Time lockEnd = 324111 * UNITS_PER_MASTER_TICK;
+  constexpr Time tick = UNITS_PER_MASTER_TICK;
+
+  SECTION( "in the vertical blank at once" )
+  {
+    REQUIRE( chip->vramFreeAt( at( 20, 300 ), false ) == at( 20, 300 ) );
+  }
+
+  SECTION( "through a fetch's lock, at its end" )
+  {
+    Time const now = at( 100, 639 );
+    REQUIRE( chip->vramFreeAt( now, false ) == lockEnd );
+    REQUIRE( chip->vramFreeAt( lockEnd - ( 60 * tick ), true ) == lockEnd );
+  }
+
+  SECTION( "in the microcycle's last four dots, or at its first if waiting there" )
+  {
+    // Dot 1, third tick: to dot 4.
+    Time const late = lockEnd + ( 7 * tick );
+    REQUIRE( chip->vramFreeAt( late, false ) == lockEnd + ( 20 * tick ) );
+    // Dots 4 to 7 at once, and the first two ticks of the next dot 0.
+    REQUIRE( chip->vramFreeAt( lockEnd + ( 23 * tick ), false ) == lockEnd + ( 23 * tick ) );
+    REQUIRE( chip->vramFreeAt( lockEnd + ( 41 * tick ), true ) == lockEnd + ( 41 * tick ) );
+    REQUIRE( chip->vramFreeAt( lockEnd + ( 43 * tick ), true ) == lockEnd + ( 60 * tick ) );
+  }
+
+  SECTION( "the bus-master flag lifts the schedule" )
+  {
+    chip->write( 0, FLAGS, 1U << 10U, true, true );
+    REQUIRE( chip->vramFreeAt( at( 100, 639 ), false ) == at( 100, 639 ) );
+  }
+}

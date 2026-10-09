@@ -28,11 +28,11 @@
     "end": {
       "frame": 601,
       "picture": "441125df",
-      "work_ram": "6bde96f1",
+      "work_ram": "99edda91",
       "video_ram": "10ade438",
       "palette_ram": "680f2b38",
-      "audio_ram": "ea48b860",
-      "sound": "7dbf5505"
+      "audio_ram": "df73c2f5",
+      "sound": "9d3667eb"
     }
   }
 }

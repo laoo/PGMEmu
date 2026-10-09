@@ -90,7 +90,7 @@
     "title": {
       "frame": 1201,
       "picture": "c07c2253",
-      "work_ram": "d9f1c0f3",
+      "work_ram": "279265bb",
       "video_ram": "ae80701d",
       "palette_ram": "91aeb7e1",
       "audio_ram": "e8773bcc",
@@ -99,29 +99,29 @@
     "attract": {
       "frame": 3001,
       "picture": "f0ac5a4f",
-      "work_ram": "3a5b4ecd",
+      "work_ram": "b7784d2e",
       "video_ram": "7d094af3",
       "palette_ram": "8a2b715c",
-      "audio_ram": "9d402304",
-      "sound": "4c1957c7"
+      "audio_ram": "c2f30747",
+      "sound": "d2e53e0b"
     },
     "start": {
       "frame": 4035,
       "picture": "3589290a",
-      "work_ram": "657d433a",
+      "work_ram": "0ab9a3ea",
       "video_ram": "d69873b7",
       "palette_ram": "095cb806",
-      "audio_ram": "9dc92969",
-      "sound": "1b0c343a"
+      "audio_ram": "bc39b364",
+      "sound": "22ef4268"
     },
     "play": {
       "frame": 4639,
       "picture": "87ee46c4",
-      "work_ram": "9e8dd93b",
+      "work_ram": "e0b24461",
       "video_ram": "d69873b7",
       "palette_ram": "eb47cebc",
-      "audio_ram": "38ed661c",
-      "sound": "1a7ec85d"
+      "audio_ram": "191dfc11",
+      "sound": "be29d3b8"
     }
   }
 }

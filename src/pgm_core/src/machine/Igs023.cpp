@@ -35,6 +35,36 @@ constexpr Time FETCH_START = ( Time{ 638 } * UNITS_PER_DOT ) + UNITS_PER_MASTER_
 constexpr Time FETCH_LENGTH = ( Time{ 464 } * 908 * UNITS_PER_MASTER_TICK ) / 615;
 constexpr std::uint16_t SPRITE_DMA_LINE = 221;
 
+// The VRAM arbiter counts master ticks; the pixel enable fires on every fifth.
+constexpr std::int64_t TICKS_PER_DOT = UNITS_PER_DOT / UNITS_PER_MASTER_TICK;
+constexpr std::int64_t TICKS_PER_LINE = DOTS_PER_LINE * TICKS_PER_DOT;
+constexpr std::int64_t FETCH_START_TICK = FETCH_START / UNITS_PER_MASTER_TICK;
+constexpr std::int64_t FETCH_TICKS = FETCH_LENGTH / UNITS_PER_MASTER_TICK;
+// The background's head start at alignment 0, in dots (igs023_bg.sv, from the
+// board: the lock ends 11.8 us after hsync, 100 ns sooner per pixel of scroll).
+constexpr std::int64_t HEADSTART_DOTS = 47;
+constexpr std::int64_t MICROCYCLE_DOTS = 8;
+// From the tick the arbiter starts an access to the one it acknowledges on:
+// both bytes, a setup and a hold tick each.
+constexpr std::int64_t ACCESS_TICKS = 4;
+// The text layer's fetch for the next line is made on lines 39 to 262; from
+// the first of them to the end of the frame the arbiter keeps its schedule.
+constexpr int FIRST_FETCH_LINE = VBLANK_LINES - 1;
+constexpr int LAST_FETCH_LINE = LINES_PER_FRAME - 2;
+
+bool fetchedOn( std::int64_t line )
+{
+  auto const vcnt = static_cast<int>( line % LINES_PER_FRAME );
+  return vcnt >= FIRST_FETCH_LINE && vcnt <= LAST_FETCH_LINE;
+}
+
+// The dot a master tick is in, counted from power-up: the counter advances on
+// the tick after each pixel enable (dotsAt below).
+std::int64_t dotOfTick( std::int64_t tick )
+{
+  return tick < 1 ? 0 : ( tick - 1 ) / TICKS_PER_DOT;
+}
+
 // The dots of a line at which the raster does something: the line starts, its
 // hsync rises, and the layers start fetching the next line.
 constexpr std::array<int, 3> EVENT_DOTS{ 0, HSYNC_START_DOT, 638 };
@@ -131,7 +161,7 @@ void Igs023::advanceTo( Time now )
       onHsync( ( ( line * DOTS_PER_LINE ) + HSYNC_START_DOT ) * UNITS_PER_DOT );
       break;
     default:
-      onFetch( vcnt );
+      onFetch( line );
       break;
     }
   }
@@ -189,14 +219,49 @@ void Igs023::onHsync( Time at )
   }
 }
 
-void Igs023::onFetch( int line )
+void Igs023::onFetch( std::int64_t line )
 {
   // The fetch at the end of line `line` is for the next one.
-  int const next = line + 1 - VBLANK_LINES;
+  int const next = static_cast<int>( line % LINES_PER_FRAME ) + 1 - VBLANK_LINES;
   if ( next >= 0 && next < HEIGHT )
   {
+    mFetchAlignments.at( static_cast<std::size_t>( line ) % mFetchAlignments.size() ) =
+        FetchAlignment{ .line = line, .alignment = backgroundScrollX( next ) & 31U };
     drawLine( next );
   }
+}
+
+std::uint32_t Igs023::backgroundScrollX( int line ) const
+{
+  // The X register plus the line's scroll word at 0x7000.
+  std::uint32_t const scrollAt = 0x7000U + ( static_cast<std::uint32_t>( line ) << 1U );
+  return ( mControl[SCROLL_BG_X] + vramWord( scrollAt ) ) & 0x7ffU;
+}
+
+std::uint32_t Igs023::fetchAlignment( std::int64_t line ) const
+{
+  FetchAlignment const& made = mFetchAlignments.at( static_cast<std::size_t>( line ) % mFetchAlignments.size() );
+  if ( made.line == line )
+  {
+    return made.alignment;
+  }
+  // A fetch not made yet will see the registers and VRAM as they are now.
+  int const next = static_cast<int>( line % LINES_PER_FRAME ) + 1 - VBLANK_LINES;
+  return backgroundScrollX( next ) & 31U;
+}
+
+Igs023::FetchLock Igs023::fetchLock( std::int64_t line ) const
+{
+  FetchLock lock;
+  lock.textStart = ( line * TICKS_PER_LINE ) + FETCH_START_TICK;
+  lock.textEnd = lock.textStart + FETCH_TICKS;
+  // The head start is loaded on the tick after the text layer lets go, and
+  // counted down by the pixel enables after that; the lock ends on the tick
+  // after the last.
+  std::int64_t const firstEnable = lock.textEnd - ( lock.textEnd % TICKS_PER_DOT ) + TICKS_PER_DOT;
+  std::int64_t const dots = HEADSTART_DOTS - static_cast<std::int64_t>( fetchAlignment( line ) );
+  lock.end = firstEnable + ( ( dots - 1 ) * TICKS_PER_DOT ) + 1;
+  return lock;
 }
 
 std::uint8_t Igs023::vramAt( std::size_t address ) const
@@ -338,9 +403,7 @@ void Igs023::drawBackground( int line, std::array<std::uint16_t, WIDTH>& out ) c
   // A 64-column map at 0x0000 folded into 4 KB, and a scroll word per line at
   // 0x7000.
   std::uint32_t const y = ( static_cast<std::uint32_t>( line ) + mControl[SCROLL_BG_Y] ) & 0x7ffU;
-  std::uint32_t const scrollAt = 0x7000U + ( static_cast<std::uint32_t>( line ) << 1U );
-  std::uint32_t const scroll = vramWord( scrollAt );
-  std::uint32_t const x = ( mControl[SCROLL_BG_X] + scroll ) & 0x7ffU;
+  std::uint32_t const x = backgroundScrollX( line );
   std::uint32_t const rowBase = ( y >> 5U ) << 8U;
   std::array<std::uint16_t, 32> tile{};
   for ( int i = 0; i < WIDTH; ++i )
@@ -394,22 +457,19 @@ void Igs023::drawLine( int line )
     // transparent background, the background's pen shows.
     std::uint16_t const sprite = sprites[i];
     bool const spriteHigh = ( sprite & 0x400U ) == 0;
+    bool const backgroundShown = backgroundOn && backgroundOpaque( background[i] );
     std::uint32_t word = 0;
     if ( textOpaque( text[i] ) )
     {
       word = text[i];
     }
-    else if ( spriteHigh && spritesOn )
+    else if ( spriteHigh ? spritesOn : !backgroundShown )
     {
       word = SPRITE_PALETTE + ( sprite & 0x3ffU );
     }
-    else if ( backgroundOn && backgroundOpaque( background[i] ) )
+    else if ( backgroundShown )
     {
       word = background[i];
-    }
-    else if ( !spriteHigh )
-    {
-      word = SPRITE_PALETTE + ( sprite & 0x3ffU );
     }
     else
     {
@@ -662,42 +722,133 @@ void Igs023::write( Time now, std::uint32_t address, std::uint16_t value, bool u
   }
 }
 
-Time Igs023::vramFreeAt( Time now ) const
+Time Igs023::vramFreeAt( Time now, bool write ) const
 {
   if ( ( controlFlags() & CPU_BUS_MASTER ) != 0 )
   {
     return now;
   }
-  Time const line = now / UNITS_PER_LINE;
-  for ( Time const fetchLine : { line, line - 1 } )
+
+  // The access is followed through igs023.sv's arbiter a master tick at a
+  // time, from the tick its request is pending on.
+  std::int64_t const pending = ( now + UNITS_PER_MASTER_TICK - 1 ) / UNITS_PER_MASTER_TICK;
+
+  // The lock that holds `tick`, as the tick it ends on, or -1. The text
+  // layer's fetch and the background's head start are a tick apart.
+  auto const lockedUntil = [&]( std::int64_t tick )
   {
-    auto const vcnt = static_cast<int>( ( ( fetchLine % LINES_PER_FRAME ) + LINES_PER_FRAME ) % LINES_PER_FRAME );
-    if ( fetchLine < 0 || vcnt < VBLANK_LINES - 1 || vcnt >= LINES_PER_FRAME - 1 )
+    std::int64_t const line = dotOfTick( tick ) / DOTS_PER_LINE;
+    for ( std::int64_t const fetch : { line, line - 1 } )
     {
+      if ( fetch < 0 || !fetchedOn( fetch ) )
+      {
+        continue;
+      }
+      FetchLock const lock = fetchLock( fetch );
+      if ( tick >= lock.textStart && tick < lock.textEnd )
+      {
+        return lock.textEnd;
+      }
+      if ( tick > lock.textEnd && tick < lock.end )
+      {
+        return lock.end;
+      }
+    }
+    return std::int64_t{ -1 };
+  };
+
+  // The dot of the microcycle `tick` is in, counted from the last lock's end.
+  auto const slotOf = [&]( std::int64_t tick )
+  {
+    std::int64_t const line = dotOfTick( tick ) / DOTS_PER_LINE;
+    for ( std::int64_t fetch = line; fetch >= line - 2 && fetch >= 0; --fetch )
+    {
+      if ( fetchedOn( fetch ) )
+      {
+        std::int64_t const end = fetchLock( fetch ).end;
+        if ( end <= tick )
+        {
+          return ( dotOfTick( tick ) - dotOfTick( end ) ) % MICROCYCLE_DOTS;
+        }
+      }
+    }
+    return std::int64_t{ 0 };
+  };
+
+  // Lines 39 to 263: from the first fetch to the end of the frame.
+  auto const scheduled = [&]( std::int64_t tick )
+  {
+    std::int64_t const dot = dotOfTick( tick );
+    auto const vcnt = static_cast<int>( ( dot / DOTS_PER_LINE ) % LINES_PER_FRAME );
+    return vcnt > FIRST_FETCH_LINE || ( vcnt == FIRST_FETCH_LINE && dot % DOTS_PER_LINE == DOTS_PER_LINE - 1 );
+  };
+
+  enum class Phase : std::uint8_t
+  {
+    WAITING,
+    LOW_SETUP,
+    LOW_HOLD,
+    HIGH_SETUP,
+    HIGH_HOLD
+  };
+  Phase phase = Phase::WAITING;
+  bool held = false;     // waited through a lock, so started at its end
+  bool straggle = false; // a write started too late in the window
+  bool freeBefore = lockedUntil( pending - 1 ) < 0;
+  bool highFreeBefore = freeBefore;
+  for ( std::int64_t tick = pending;; )
+  {
+    if ( std::int64_t const until = lockedUntil( tick ); until >= 0 )
+    {
+      held = held || phase == Phase::WAITING;
+      tick = until;
+      freeBefore = false;
+      highFreeBefore = false;
       continue;
     }
-    Time const start = ( fetchLine * UNITS_PER_LINE ) + FETCH_START;
-    if ( now >= start && now < start + FETCH_LENGTH )
+    std::int64_t const slot = slotOf( tick );
+    std::int64_t const subslot = ( tick - 1 ) % TICKS_PER_DOT;
+    // A straggler's odd byte waits for the dot the background gives up.
+    bool const highFree = !straggle || slot == 3;
+    switch ( phase )
     {
-      return start + FETCH_LENGTH;
+    case Phase::WAITING:
+      if ( !scheduled( tick ) || slot >= 4 || ( slot == 0 && subslot < 2 ) || held )
+      {
+        phase = Phase::LOW_SETUP;
+        straggle = scheduled( tick ) && !held && write && slot == 7 && subslot >= 4;
+      }
+      break;
+    case Phase::LOW_SETUP:
+      phase = freeBefore ? Phase::LOW_HOLD : phase;
+      break;
+    case Phase::LOW_HOLD:
+      phase = freeBefore ? Phase::HIGH_SETUP : phase;
+      break;
+    case Phase::HIGH_SETUP:
+      phase = highFreeBefore ? Phase::HIGH_HOLD : phase;
+      break;
+    case Phase::HIGH_HOLD:
+      if ( highFreeBefore )
+      {
+        return now + ( ( tick - pending - ACCESS_TICKS ) * UNITS_PER_MASTER_TICK );
+      }
+      break;
     }
+    freeBefore = true;
+    highFreeBefore = highFree;
+    ++tick;
   }
-  return now;
 }
 
-int Igs023::waitStates( std::uint32_t address, bool write, bool upper, bool lower )
+int Igs023::waitStates( std::uint32_t address, bool write )
 {
   bool const vram = ( ( address >> 20U ) & 0x3U ) == 1;
   if ( !vram )
   {
     return write ? 1 : 0;
   }
-  bool const word = upper && lower;
-  if ( write )
-  {
-    return word ? 3 : 2;
-  }
-  return word ? 2 : 1;
+  return 2;
 }
 
 std::span<std::uint8_t const> Igs023::vram() const

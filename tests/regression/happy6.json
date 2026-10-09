@@ -153,7 +153,7 @@
     "attract": {
       "frame": 3001,
       "picture": "c3bd3b5c",
-      "work_ram": "f73bdbf9",
+      "work_ram": "ccf82fed",
       "video_ram": "3bbf3560",
       "palette_ram": "30407f81",
       "audio_ram": "22d12ff1",
@@ -162,11 +162,11 @@
     "start": {
       "frame": 3735,
       "picture": "36a0c1d6",
-      "work_ram": "b35d1ec3",
+      "work_ram": "d92c54dc",
       "video_ram": "5ebdf136",
       "palette_ram": "a7f29a71",
-      "audio_ram": "e0966ff3",
-      "sound": "8bedd5e0"
+      "audio_ram": "c81b70c0",
+      "sound": "9a6a747a"
     },
     "play": {
       "frame": 4711,
@@ -174,8 +174,8 @@
       "work_ram": "376c3e7d",
       "video_ram": "011ffca6",
       "palette_ram": "2aeb34d4",
-      "audio_ram": "47e21594",
-      "sound": "5a2b92fb"
+      "audio_ram": "72f30a89",
+      "sound": "64e08927"
     }
   }
 }

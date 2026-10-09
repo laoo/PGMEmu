@@ -45,7 +45,7 @@
     "logo": {
       "frame": 61,
       "picture": "61dc8ca0",
-      "work_ram": "f6d3e815",
+      "work_ram": "0a5009fc",
       "video_ram": "d2c962af",
       "palette_ram": "848a9b52",
       "audio_ram": "912707cb",
@@ -54,7 +54,7 @@
     "jingle": {
       "frame": 601,
       "picture": "18998378",
-      "work_ram": "21f31841",
+      "work_ram": "2f5dc925",
       "video_ram": "090be041",
       "palette_ram": "52a76f72",
       "audio_ram": "f191683a",
@@ -63,7 +63,7 @@
     "settled": {
       "frame": 901,
       "picture": "42bb10d9",
-      "work_ram": "f467bd16",
+      "work_ram": "16c7eb1a",
       "video_ram": "8740f611",
       "palette_ram": "52a76f72",
       "audio_ram": "0c0f55c8",

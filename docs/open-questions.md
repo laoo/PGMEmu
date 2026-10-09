@@ -5,8 +5,8 @@ answers it. **This file only shrinks.**
 
 ## Timing drift against the RTL
 
-Checkpoints in the BIOS's boot show the emulator running some loops about 0.03 % faster than the
-RTL simulation, in code that copies ROM into the Z80's RAM and reads both back
+Checkpoints in the BIOS's boot showed the emulator running some loops about 0.03 % faster than the
+RTL simulation of the core before `6f757e4`, in code that copies ROM into the Z80's RAM and reads both back
 ([hardware/differences.md](hardware/differences.md)). Before the interrupt acknowledge's E-clock
 wait was modelled, a drift of this size moved an event of orlegend by a frame by frame 1200; no
 tested outcome depends on it now, but a longer run or another game may. `compare-with-rtl.py
@@ -14,7 +14,8 @@ tested outcome depends on it now, but a longer run or another game may. `compare
 loop at 0xE14 that copies ROM into the Z80's RAM, which the RTL still has 27 turns of. Two
 candidates are left:
 
-- the background layer's VRAM reads, a few dots per tile, which the emulator does not charge;
+- the background layer's own VRAM reads in the first half of each microcycle, which the emulator
+  leaves out of the arbiter it follows;
 - the RTL's 68000 clock, which stops on every SDRAM access that misses the ROM cache and catches
   up at 25 MHz afterwards. A model of it was measured to matter little
   ([0010](decisions/0010-rom-timing.md)), but only on one stretch of code.

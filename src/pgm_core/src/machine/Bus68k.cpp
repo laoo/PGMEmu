@@ -66,10 +66,10 @@ std::uint16_t Bus68k::read( std::uint32_t address, bool upper, bool lower )
   {
     if ( ( address >> 20U ) == 0x9 )
     {
-      mTime = mVideo.vramFreeAt( mTime );
+      mTime = mVideo.vramFreeAt( mTime, false );
     }
     std::uint16_t const value = mVideo.read( mTime, address, upper, lower );
-    mTime += Igs023::waitStates( address, false, upper, lower ) * UNITS_PER_M68K_CYCLE;
+    mTime += Igs023::waitStates( address, false ) * UNITS_PER_M68K_CYCLE;
     return value;
   }
   case 0xc:
@@ -120,10 +120,10 @@ void Bus68k::write( std::uint32_t address, std::uint16_t value, bool upper, bool
   case 0xb:
     if ( ( address >> 20U ) == 0x9 )
     {
-      mTime = mVideo.vramFreeAt( mTime );
+      mTime = mVideo.vramFreeAt( mTime, true );
     }
     mVideo.write( mTime, address, value, upper, lower );
-    mTime += Igs023::waitStates( address, true, upper, lower ) * UNITS_PER_M68K_CYCLE;
+    mTime += Igs023::waitStates( address, true ) * UNITS_PER_M68K_CYCLE;
     return;
   case 0xc:
     if ( ( address & 0xffff00U ) == 0xc08000U )

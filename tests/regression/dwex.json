@@ -153,29 +153,29 @@
     "attract": {
       "frame": 3001,
       "picture": "f5ba6d60",
-      "work_ram": "cc43ce68",
+      "work_ram": "7f2da2df",
       "video_ram": "d7847714",
       "palette_ram": "43ebf179",
       "audio_ram": "41924e46",
-      "sound": "648a24ca"
+      "sound": "78d06b92"
     },
     "start": {
       "frame": 3735,
       "picture": "15decabc",
-      "work_ram": "004140a6",
+      "work_ram": "a44c74f8",
       "video_ram": "22d5e470",
       "palette_ram": "1b02e159",
       "audio_ram": "af6f39fe",
-      "sound": "ce399d08"
+      "sound": "66f16959"
     },
     "play": {
       "frame": 4711,
       "picture": "cc3d15b3",
-      "work_ram": "3eaa56bd",
+      "work_ram": "3faaf682",
       "video_ram": "521b8c8e",
       "palette_ram": "9b156fb6",
-      "audio_ram": "8970f85d",
-      "sound": "57694fcb"
+      "audio_ram": "9bcae204",
+      "sound": "7270bc61"
     }
   }
 }

@@ -2,8 +2,8 @@
 
 // The IGS023 video chip, ported from rtl/igs023.sv, igs023_fg.sv and
 // igs023_bg.sv at MiSTer core commit e898860: its registers, VRAM, palette RAM,
-// raster timing, line counter and interrupts, and the picture it draws, mixed
-// as at commit 6f757e4. The sprites are SpriteEngine's.
+// raster timing, line counter and interrupts, and the picture it draws; its
+// VRAM arbiter and mixer as at commit 6f757e4. The sprites are SpriteEngine's.
 //
 // A line is drawn whole when the RTL starts fetching it, at dot 638 of the line
 // before, from the registers and VRAM of that moment. The RTL's layers fetch
@@ -61,24 +61,30 @@ public:
   std::uint16_t read( Time now, std::uint32_t address, bool upper, bool lower );
   void write( Time now, std::uint32_t address, std::uint16_t value, bool upper, bool lower );
 
-  /// The 68000 cycles a bus cycle to the chip waits for its DTACK.
+  /// The 68000 cycles a bus cycle to the chip waits for its DTACK once the
+  /// chip has started on it.
   ///
-  /// VRAM is 8 bits wide, and igs023.sv moves a word through it a byte at a
-  /// time, two 50 MHz clocks a byte, before it acknowledges: DTACK comes about
-  /// six master ticks after the chip select for a word and four for a byte.
-  /// Registers and palette RAM acknowledge on the clock after it. The 68000
-  /// samples DTACK at the end of S4, and asserts its data strobes at S2 for a
-  /// read but S4 for a write, so a write waits longer for the same delay.
-  /// Contention with the layers' own VRAM fetches, which the RTL arbitrates,
-  /// is not counted until the layers are emulated (M3).
-  [[nodiscard]] static int waitStates( std::uint32_t address, bool write, bool upper, bool lower );
+  /// VRAM is 8 bits wide, and igs023.sv moves both bytes of the word through
+  /// it, two 50 MHz clocks each, before it acknowledges, whichever strobes are
+  /// asserted and whether it reads or writes: it starts from the address
+  /// strobe, as the board was measured to. Registers and palette RAM
+  /// acknowledge on the clock after the chip select, which a write asserts a
+  /// cycle later than a read.
+  [[nodiscard]] static int waitStates( std::uint32_t address, bool write );
 
-  /// When the 68000 may next have VRAM: `now`, or the end of the text layer's
-  /// fetch if one holds VRAM at `now`. igs023.sv gives VRAM to that fetch from
-  /// dot 638 of each line before a visible one, for 464 cycles of the 33 MHz
-  /// clock, unless the CPU bus-master flag (register 14, bit 10) is set. The
-  /// background's reads, a few dots per 32-pixel tile, are not counted.
-  [[nodiscard]] Time vramFreeAt( Time now ) const;
+  /// When igs023.sv starts on a 68000 access to VRAM that reaches the bus at
+  /// `now`: `now` when nothing contends with it, later by the master ticks
+  /// its arbiter holds the access back.
+  ///
+  /// On a line whose layers are fetched the chip locks the 68000 out while
+  /// the text layer fetches the next line and the background gets a head
+  /// start, which is shorter the further the background is scrolled within
+  /// its 32-pixel tile. From the end of that lock to the end of the line it
+  /// gives VRAM out in microcycles of eight dots: the 68000 is started only in
+  /// the last four, or in the first if it was already waiting there, or at
+  /// the lock's end if it waited through it. The CPU bus-master flag (register
+  /// 14, bit 10) and the vertical blank lift all of it.
+  [[nodiscard]] Time vramFreeAt( Time now, bool write ) const;
 
   /// VRAM as the chip's 8-bit RAM holds it, and palette RAM in the 68000's
   /// byte order: what the RTL simulator's VIDEO_RAM and PALETTE_RAM are.
@@ -127,6 +133,7 @@ public:
     archive( mNextSpritesReady );
     archive( mSpriteList );
     archive( mBusHeldUntil );
+    archive( mFetchAlignments );
     archive( mBuilding );
     archive( mFrame );
     archive( mFramesCompleted );
@@ -135,7 +142,25 @@ public:
 private:
   void onLineStart( int line );
   void onHsync( Time at );
-  void onFetch( int line );
+  /// `line` counts lines from power-up.
+  void onFetch( std::int64_t line );
+
+  /// The master ticks the 68000 is locked out of VRAM by the fetch made on
+  /// line `line`, counted from power-up: the text layer's, from `textStart`
+  /// to `textEnd`, then, after a tick free, the background's head start to
+  /// `end`.
+  struct FetchLock
+  {
+    std::int64_t textStart{};
+    std::int64_t textEnd{};
+    std::int64_t end{};
+  };
+
+  [[nodiscard]] FetchLock fetchLock( std::int64_t line ) const;
+  /// The background's scroll within its tile, which its head start is
+  /// shortened by, as the fetch made on line `line` saw it.
+  [[nodiscard]] std::uint32_t fetchAlignment( std::int64_t line ) const;
+  [[nodiscard]] std::uint32_t backgroundScrollX( int line ) const;
   [[nodiscard]] std::uint16_t controlFlags() const;
 
   /// Draws logical line `line`, 0 to 223, into the frame being built.
@@ -181,6 +206,16 @@ private:
   bool mNextSpritesReady{};
   SpriteList mSpriteList;
   Time mBusHeldUntil{};
+
+  /// The last few fetches' lines and the background's alignment each saw,
+  /// by line modulo their number.
+  struct FetchAlignment
+  {
+    std::int64_t line{ -1 };
+    std::uint32_t alignment{};
+  };
+
+  std::array<FetchAlignment, 4> mFetchAlignments{};
   std::vector<std::uint8_t> mBuilding;
   std::vector<std::uint8_t> mFrame;
   std::int64_t mFramesCompleted{};

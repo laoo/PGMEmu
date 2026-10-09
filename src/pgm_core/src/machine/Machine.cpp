@@ -116,7 +116,7 @@ Sdram sdramOf( cart::Bios const& bios, cart::PgmImage const* cartridge )
 /// What a save state begins with, and the version of its layout, which
 /// changes whenever a part's state does.
 constexpr std::uint32_t STATE_MAGIC = 0x54534750; // "PGST"
-constexpr std::uint32_t STATE_VERSION = 3;
+constexpr std::uint32_t STATE_VERSION = 4;
 
 } // namespace
 
