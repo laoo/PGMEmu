@@ -144,17 +144,11 @@ def decode_png(data):
 
 
 def compare_pictures(mine, theirs):
-    """Differing pixels, and the rows they lie in, of two decoded pictures.
-
-    The simulator's picture is a row lower than the emulator's: its capture
-    (sim_video.h) counts the line up on the hblank that ends vblank, before the
-    first visible line is stored, so its row 0 is stale and the last visible
-    line falls off the bottom. Emulator row y is compared with simulator row
-    y + 1, the last row not at all."""
+    """Differing pixels, and the rows they lie in, of two decoded pictures."""
     (width, height, left), (_, _, right) = mine, theirs
     differing, rows = 0, []
-    for y in range(height - 1):
-        count = sum(1 for x in range(width) if left[y][3 * x:3 * x + 3] != right[y + 1][3 * x:3 * x + 3])
+    for y in range(height):
+        count = sum(1 for x in range(width) if left[y][3 * x:3 * x + 3] != right[y][3 * x:3 * x + 3])
         if count:
             differing += count
             rows.append(y)

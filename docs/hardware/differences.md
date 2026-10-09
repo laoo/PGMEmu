@@ -79,6 +79,3 @@ faster than the RTL, mostly while it copies ROM into the Z80's RAM and verifies 
 interrupt acknowledge's E-clock wait (`M68k::willInterrupt`) and the text layer's VRAM window
 were modelled, no tested outcome depends on it; the open question on
 [timing drift](../open-questions.md) keeps it in view.
-
-The simulator's screenshots are a row lower than the emulator's (`scripts/compare-with-rtl.py`
-says why), which the comparison allows for.

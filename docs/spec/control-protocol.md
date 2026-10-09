@@ -473,10 +473,6 @@ before every frame boundary.
 
 `frame` counts the pictures completed since power-up.
 
-The simulator's screenshot of the same frame is a row lower: its capture counts the line up
-before it stores the first visible one, so its row 0 is stale and the last visible row is
-missing.
-
 Errors: `not_loaded`, `screenshot_failed`.
 
 ### `audio.capture_start`
