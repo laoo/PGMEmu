@@ -14,7 +14,7 @@ makes it true and comes out in the commit that makes it false.
 | Text layer's fetch | Stops after 464 cycles of the 33 MHz clock whether or not all 57 tiles arrived; with the simulator's SDRAM latency the last tiles of a line can be left from an earlier fetch. The emulator always draws them fresh, so PGMTest's `fg_test` differs from the RTL in the rightmost column only. Probable cause, from reading `igs023_fg.sv`. | Fetches every tile. | not reproduced |
 | RTC | Starts from zero rather than the date. Its "second" passes every 65536 pulses of a clock derived from the Z80's, about 1.77 s. | A V3021 with its own 32.768 kHz crystal. | `V3021` |
 | Z80 at power-up | Runs from address 0 with every register zero: its reset is a latch bit that starts clear, so it is never reset until the BIOS holds it, and the simulator starts every flip-flop at zero. A reset then sets only what tv80's flip-flops hold (PC, AF, AF', SP, I, R, the interrupt state), and leaves BC to IY as they were. | Undefined until the BIOS resets it. | `Z80` |
-| ICS2115's voices | `ics2115_osc.sv`'s model, quirks included: the oscillator's direction is read from bit 6 of its control register while a bidirectional loop flips bit 6 of its configuration; a volume loop turns back once and a plain one going up holds; 16-bit samples are the addressed byte twice. The RTL's comments mark much of it as measured on a board. | Where it differs, not known here. | `Ics2115` |
+| ICS2115's voices | `ics2115_osc.sv`'s model, quirks included: a volume loop turns back once and a plain one going up holds; 16-bit samples are the addressed byte twice. An IRQ of a voice that has ended comes back every pass while the voice keeps it enabled; starting the voice again stops it, and so does writing its position, which the RTL's author doubts the board does. The RTL's comments mark much of it as measured on a board. | Where it differs, not known here. | `Ics2115` |
 | IGS022's commands | The 68000's write to the IGS025 that starts one waits until the IGS022 has finished it (`prot_dtack_n` in `PGM.sv`, which its own comment doubts). | The cartridge has no hold on DTACK; the game waits for the completion code in shared RAM. | `Igs022Igs025Board` |
 
 ## What the images hold, which the RTL does not load
@@ -46,8 +46,8 @@ The emulator runs a cartridge as its image holds it ([0014](../decisions/0014-im
 ## What comparing with the RTL shows today
 
 `scripts/compare-with-rtl.py` runs the same requests on both. The simulation is the core at
-MiSTer-devel's `6f757e4`, which arbitrates VRAM afresh, caches more of the 68000's ROM and changes
-the ICS2115's IRQs; the emulator's modules that cite an earlier commit are still the earlier RTL.
+MiSTer-devel's `6f757e4`, which arbitrates VRAM afresh and caches more of the 68000's ROM; the
+emulator's modules that cite an earlier commit are still the earlier RTL.
 
 - **The BIOS alone:** VRAM, palette RAM and the picture are identical at frames 60 and 600; work
   RAM differs in dead stack only. Its jingle, recorded from the reset to frame 800, is identical
@@ -55,7 +55,8 @@ the ICS2115's IRQs; the emulator's modules that cite an earlier commit are still
 - **orlegend:** VRAM, palette RAM and the picture are identical at frames 300, 900, 1200 and
   1500; work RAM differs in dead stack only.
 - **orlegend's sound:** from the reset to frame 1200, 20 seconds of attract, identical sample
-  for sample until 19.8 s, after which 8,940 of the last 9,181 frames differ.
+  for sample until 19.8 s but for one frame at 19.2 s, where a write reaches a voice a sample
+  apart; after 19.8 s, 8,940 of the last 9,181 frames differ.
 - **PGMTest's sound pages:** `z80_ctrl`, `z80_sound_test`, `z80_ics_test` and
   `ics2115_vol_pan` match the RTL at frame 360 in the Z80's RAM (dead stack aside), VRAM,
   palette RAM and the picture, with their sounds played through `--press`. `z80_sound_test`'s

@@ -153,8 +153,8 @@
       "work_ram": "10a53615",
       "video_ram": "086157a4",
       "palette_ram": "8c883fca",
-      "audio_ram": "0490e64a",
-      "sound": "93ca94c0"
+      "audio_ram": "f64e1427",
+      "sound": "ee40a523"
     },
     "play": {
       "frame": 3405,
@@ -162,8 +162,8 @@
       "work_ram": "ff5a0670",
       "video_ram": "5505b6f9",
       "palette_ram": "54c5b8c9",
-      "audio_ram": "c3e752e4",
-      "sound": "66726320"
+      "audio_ram": "243ca4cc",
+      "sound": "6e0aaea6"
     }
   }
 }

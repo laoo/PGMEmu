@@ -94,11 +94,11 @@ without it. They are read-only references, never edited from here:
 - `../Arcade-IGSPGM_MiSTer` (https://github.com/MiSTer-devel/Arcade-IGSPGM_MiSTer),
   Martin Donlon's MiSTer core. Its `rtl/` is **the hardware reference**
   ([0002](docs/decisions/0002-the-fpga-core-is-the-reference.md)). Port from
-  it, not from MAME. The commits the module headers cite are those of
-  https://github.com/wickerwaka/Arcade-IGSPGM_MiSTer, where the core was
-  until June 2026: `e898860` there is `ddd88ca` at MiSTer-devel, whose
-  history the move rewrote, with the same RTL. The Verilator simulation is in
-  `sim/`:
+  it, not from MAME. A module header cites the commit it was read at:
+  `e898860` is https://github.com/wickerwaka/Arcade-IGSPGM_MiSTer, where the
+  core was until June 2026, and is `ddd88ca` at MiSTer-devel, whose history
+  the move rewrote, with the same RTL; any other commit is MiSTer-devel's.
+  The Verilator simulation is in `sim/`:
   - Run `PGM_ROM_DIR=../../ROMS ./sim <game>` for the GUI.
   - Run `./sim --server` for the JSON-lines protocol in `docs/sim-server.md`.
   - It runs at about 1.4 frames per second.

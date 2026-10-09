@@ -22,12 +22,9 @@ constexpr std::uint8_t OSC_IRQ = 1U << 5;
 constexpr std::uint8_t OSC_INVERT = 1U << 6;
 constexpr std::uint8_t OSC_IRQ_PENDING = 1U << 7;
 
-// osc_ctl, register 0x10. The direction the oscillator moves in is read from
-// its bit 6, where osc_conf keeps its invert flag, though only osc_conf's flag
-// is ever flipped (ics2115_osc.sv).
+// osc_ctl, register 0x10
 constexpr std::uint8_t CTL_DONE = 1U << 0;
 constexpr std::uint8_t CTL_STOP = 1U << 1;
-constexpr std::uint8_t CTL_INVERT = 1U << 6;
 
 // vol_ctrl, register 0x0D
 constexpr std::uint8_t VOL_DONE = 1U << 0;
@@ -43,8 +40,6 @@ constexpr std::uint8_t SYS_CTL_RUN = 0x05;
 constexpr std::uint8_t CHIP_REVISION = 0x01;
 constexpr std::uint8_t DEFAULT_ACTIVE_OSC = 31;
 constexpr std::uint8_t BOOT_IRQ_VOICE = 2;
-constexpr std::uint16_t NOISE_SEED = 0xace1;
-constexpr std::uint16_t NOISE_TAPS = 0xb400;
 
 // When a Z80 write still reaches voice v in the sample period that has just
 // begun: up to -8 + 25 v master ticks after the tick. The sequencer of
@@ -122,12 +117,6 @@ std::uint32_t volumeStep( std::uint8_t mode, std::uint8_t increment )
   return ( VOLUME_STEP_MANTISSA.at( e & 31U ) << ( e >> 5U ) ) >> 10U;
 }
 
-std::uint16_t nextNoise( std::uint16_t state )
-{
-  return ( state & 1U ) != 0 ? static_cast<std::uint16_t>( ( state >> 1U ) ^ NOISE_TAPS )
-                             : static_cast<std::uint16_t>( state >> 1U );
-}
-
 std::uint32_t bit( std::size_t voice )
 {
   return 1U << voice;
@@ -152,14 +141,11 @@ void Ics2115::reset()
   mTimerInt = 0;
   mLastIrqVoice = BOOT_IRQ_VOICE;
   mLowLatch = 0;
-  mPrevReadReg = 0;
-  mPrevReadWasLow = false;
-  mOscIrqEnabled = 0;
   mOscIrqPending = 0;
-  mVolIrqEnabled = 0;
+  mOscEnded = 0;
   mVolIrqPending = 0;
+  mVolEnded = 0;
   mTimers = {};
-  mNoise = NOISE_SEED;
   mSampleCounter = 0;
   mPass = {};
 }
@@ -303,14 +289,6 @@ void Ics2115::processNextVoice()
 
 std::int16_t Ics2115::sampleAt( Voice const& voice, std::uint32_t address ) const
 {
-  bool const sixteenBit = ( voice.oscConf & OSC_16BIT ) != 0;
-  bool const ulaw = ( voice.oscConf & OSC_ULAW ) != 0;
-  if ( sixteenBit && ulaw )
-  {
-    // Format 11 is a noise generator; the ROM is not read.
-    return static_cast<std::int16_t>( ( mNoise & 0xffU ) << 8U );
-  }
-
   // PGM.sv: the chip's 24-bit byte address, its bank in the top nibble, is read
   // a word at a time from the cartridge's samples above the music base, or
   // from the BIOS's.
@@ -322,11 +300,12 @@ std::int16_t Ics2115::sampleAt( Voice const& voice, std::uint32_t address ) cons
                                       : Sdram::BIOS_MUSIC_AT + ( 2 * word );
   std::uint8_t const byte = mSdram.byte( sdramWord + ( byteAddress & 1U ) );
 
-  if ( ulaw )
+  // u-law takes precedence over 16-bit, so format 11 is u-law.
+  if ( ( voice.oscConf & OSC_ULAW ) != 0 )
   {
     return ulawDecode( byte );
   }
-  if ( sixteenBit )
+  if ( ( voice.oscConf & OSC_16BIT ) != 0 )
   {
     // The board wires the 8-bit sample ROMs so that a 16-bit sample is the
     // addressed byte in both halves.
@@ -366,18 +345,10 @@ void Ics2115::processVoice( std::size_t index, std::int32_t& left, std::int32_t&
   if ( ( v.oscCtl & ( CTL_STOP | CTL_DONE ) ) == 0 )
   {
     std::uint32_t const step = v.oscFc >> 1U;
-    bool const backwards = ( v.oscCtl & CTL_INVERT ) != 0;
+    bool const backwards = ( v.oscConf & OSC_INVERT ) != 0;
     std::uint32_t const next = ( backwards ? v.oscAcc - step : v.oscAcc + step ) & MASK_29;
     std::int64_t const remaining =
         backwards ? static_cast<std::int64_t>( next ) - v.oscStart : static_cast<std::int64_t>( v.oscEnd ) - next;
-
-    // The noise steps when the oscillator crosses a whole sample of the
-    // chip's 32-bit address, 12 fraction bits, rather than of this 9.
-    if ( ( v.oscConf & ( OSC_16BIT | OSC_ULAW ) ) == ( OSC_16BIT | OSC_ULAW ) &&
-         ( next >> 12U ) != ( v.oscAcc >> 12U ) )
-    {
-      mNoise = nextNoise( mNoise );
-    }
 
     if ( remaining >= 0 )
     {
@@ -454,23 +425,34 @@ void Ics2115::processVoice( std::size_t index, std::int32_t& left, std::int32_t&
     }
   }
 
-  // The write-back refreshes the enables beside the registers, and sets the
-  // pending flags from this pass's events only.
-  mOscIrqEnabled = ( v.oscConf & OSC_IRQ ) != 0 ? mOscIrqEnabled | bit( index ) : mOscIrqEnabled & ~bit( index );
-  mVolIrqEnabled = ( v.volCtrl & VOL_IRQ ) != 0 ? mVolIrqEnabled | bit( index ) : mVolIrqEnabled & ~bit( index );
-  if ( oscEvent )
+  // The write-back sets the pending flags from this pass's events, and again
+  // on every pass while a voice that an event ended keeps its IRQ enabled: the
+  // IRQ is a level, measured so on the board. Whether a voice had ended is
+  // judged as it was before this pass.
+  auto const writeBack = [&]( std::uint32_t& pending, std::uint32_t& ended, bool event, bool done, bool enabled )
   {
-    mOscIrqPending |= bit( index );
-  }
-  if ( volEvent )
-  {
-    mVolIrqPending |= bit( index );
-  }
+    std::uint32_t const b = bit( index );
+    if ( event || ( ( ended & b ) != 0 && enabled ) )
+    {
+      pending |= b;
+    }
+    if ( event && done )
+    {
+      ended |= b;
+    }
+    else if ( !done )
+    {
+      ended &= ~b;
+    }
+  };
+  writeBack( mOscIrqPending, mOscEnded, oscEvent, ( v.oscCtl & CTL_DONE ) != 0, ( v.oscConf & OSC_IRQ ) != 0 );
+  writeBack( mVolIrqPending, mVolEnded, volEvent, ( v.volCtrl & VOL_DONE ) != 0, ( v.volCtrl & VOL_IRQ ) != 0 );
 }
 
 bool Ics2115::irq() const
 {
-  bool const voiceIrq = ( ( mOscIrqEnabled & mOscIrqPending ) | ( mVolIrqEnabled & mVolIrqPending ) ) != 0;
+  // The line follows the pending flags, whatever the voices' enables now say.
+  bool const voiceIrq = ( mOscIrqPending | mVolIrqPending ) != 0;
   return mTimerInt != 0 || ( ( mSysCtl & SYS_CTL_RUN ) == SYS_CTL_RUN && mIrqEnabled != 0 && voiceIrq );
 }
 
@@ -621,42 +603,36 @@ std::uint8_t Ics2115::read( unsigned port )
   std::uint16_t const value = registerValue();
 
   // The side effects follow the read, as the RTL applies them when the
-  // strobe goes away.
-  if ( !low )
+  // strobe goes away. Either byte has them, as on the board: a 16-bit read of
+  // IRQV consumes two voices.
+  if ( mRegSelect < 0x40 && ( mRegSelect & 0x1fU ) == 0x0f )
   {
-    if ( mRegSelect < 0x40 && ( mRegSelect & 0x1fU ) == 0x0f )
+    // Reading IRQV consumes what it reported.
+    IrqvScan const scan = irqvScan();
+    if ( scan.found )
     {
-      // Reading IRQV's high byte consumes what it reported.
-      IrqvScan const scan = irqvScan();
-      if ( scan.found )
+      mLastIrqVoice = scan.voice;
+      mOscIrqPending &= ~bit( scan.voice );
+      mVolIrqPending &= ~bit( scan.voice );
+      Voice& v = mVoices.at( scan.voice );
+      if ( scan.osc )
       {
-        mLastIrqVoice = scan.voice;
-        mOscIrqPending &= ~bit( scan.voice );
-        mVolIrqPending &= ~bit( scan.voice );
-        Voice& v = mVoices.at( scan.voice );
-        if ( scan.osc )
-        {
-          v.oscConf &= static_cast<std::uint8_t>( ~OSC_IRQ_PENDING );
-        }
-        if ( scan.vol )
-        {
-          v.volCtrl &= static_cast<std::uint8_t>( ~VOL_IRQ_PENDING );
-        }
+        v.oscConf &= static_cast<std::uint8_t>( ~OSC_IRQ_PENDING );
+      }
+      if ( scan.vol )
+      {
+        v.volCtrl &= static_cast<std::uint8_t>( ~VOL_IRQ_PENDING );
       }
     }
-    // A timer is acknowledged by a 16-bit read of its preset register: low
-    // byte, then high.
-    if ( mPrevReadWasLow && mPrevReadReg == mRegSelect && ( mRegSelect == 0x40 || mRegSelect == 0x41 ) )
-    {
-      mIrqPending &= static_cast<std::uint8_t>( ~( 1U << ( mRegSelect - 0x40U ) ) );
-    }
   }
-  if ( mRegSelect == 0x43 )
+  // Reading a timer's preset register acknowledges it, its pending flag and
+  // its INT both; reading 0x43 does not.
+  if ( mRegSelect == 0x40 || mRegSelect == 0x41 )
   {
-    mTimerInt = 0;
+    auto const timer = static_cast<std::uint8_t>( 1U << ( mRegSelect - 0x40U ) );
+    mIrqPending &= static_cast<std::uint8_t>( ~timer );
+    mTimerInt &= static_cast<std::uint8_t>( ~timer );
   }
-  mPrevReadReg = mRegSelect;
-  mPrevReadWasLow = low;
 
   return static_cast<std::uint8_t>( low ? value : value >> 8U );
 }
@@ -712,13 +688,25 @@ void Ics2115::writeVoice( std::uint8_t low, std::uint8_t high )
   auto const refreshIrq = [&]
   {
     std::uint32_t const b = bit( mOscSelect );
-    mOscIrqEnabled = ( v.oscConf & OSC_IRQ ) != 0 ? mOscIrqEnabled | b : mOscIrqEnabled & ~b;
     if ( ( v.oscConf & ( OSC_IRQ | OSC_IRQ_PENDING ) ) == ( OSC_IRQ | OSC_IRQ_PENDING ) )
     {
       mOscIrqPending |= b;
     }
     // A volume IRQ is never pended by a write.
-    mVolIrqEnabled = ( v.volCtrl & VOL_IRQ ) != 0 ? mVolIrqEnabled | b : mVolIrqEnabled & ~b;
+
+    // A voice stops counting as ended when it is started again, or when its
+    // position is written. The second is the RTL's, by its author's own
+    // account not known from the board; it keeps a reused voice from raising
+    // an IRQ between being moved and started. Only the register's own number
+    // counts, not its mirror at 0x20-0x3F.
+    if ( ( v.oscCtl & CTL_DONE ) == 0 || mRegSelect == 0x0a || mRegSelect == 0x0b )
+    {
+      mOscEnded &= ~b;
+    }
+    if ( ( v.volCtrl & VOL_DONE ) == 0 || mRegSelect == 0x09 )
+    {
+      mVolEnded &= ~b;
+    }
   };
 
   switch ( mRegSelect & 0x1fU )

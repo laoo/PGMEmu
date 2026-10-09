@@ -1,7 +1,7 @@
 #pragma once
 
 // The ICS2115 WaveFront synthesizer, ported from rtl/ics2115/*.sv at MiSTer
-// core commit e898860: 32 voices reading 8-bit samples (linear, u-law, or the
+// core commit 6f757e4: 32 voices reading 8-bit samples (linear, u-law, or the
 // board's byte-doubled "16-bit"), interpolated, enveloped, panned and mixed to
 // stereo once per sample period; two timers; and the IRQ the Z80 runs on.
 //
@@ -86,14 +86,11 @@ public:
     archive( mTimerInt );
     archive( mLastIrqVoice );
     archive( mLowLatch );
-    archive( mPrevReadReg );
-    archive( mPrevReadWasLow );
-    archive( mOscIrqEnabled );
     archive( mOscIrqPending );
-    archive( mVolIrqEnabled );
+    archive( mOscEnded );
     archive( mVolIrqPending );
+    archive( mVolEnded );
     archive( mTimers );
-    archive( mNoise );
     archive( mPulses );
     archive( mSampleCounter );
     archive( mPass );
@@ -152,23 +149,20 @@ private:
   std::uint8_t mRegSelect{};
   std::uint8_t mSysCtl{};
   std::uint8_t mIrqEnabled{};
-  /// Bits 0 and 1: the timers' pending flags, which a 16-bit read of their
-  /// preset register acknowledges.
+  /// Bits 0 and 1: the timers' pending flags, which a read of their preset
+  /// register acknowledges.
   std::uint8_t mIrqPending{};
-  /// Bits 0 and 1: the timers' INT latches, which a read of 0x43 clears.
+  /// Bits 0 and 1: the timers' INT latches, which the same read clears.
   std::uint8_t mTimerInt{};
   std::uint8_t mLastIrqVoice{};
   std::uint8_t mLowLatch{};
-  std::uint8_t mPrevReadReg{};
-  bool mPrevReadWasLow{};
-  // The per-voice IRQ enables and pending flags the RTL keeps beside the
-  // voice registers, one bit per voice.
-  std::uint32_t mOscIrqEnabled{};
+  // The per-voice flags the RTL keeps beside the voice registers, one bit per
+  // voice: IRQs pending, and voices an event has ended, whose IRQ re-asserts.
   std::uint32_t mOscIrqPending{};
-  std::uint32_t mVolIrqEnabled{};
+  std::uint32_t mOscEnded{};
   std::uint32_t mVolIrqPending{};
+  std::uint32_t mVolEnded{};
   std::array<Timer, 2> mTimers{};
-  std::uint16_t mNoise{};
 
   /// The pass over the voices that a sample tick began.
   struct Pass

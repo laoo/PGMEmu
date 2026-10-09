@@ -156,8 +156,8 @@
       "work_ram": "146706b9",
       "video_ram": "e68de5cf",
       "palette_ram": "167dbd06",
-      "audio_ram": "e36117b3",
-      "sound": "be08c1f4"
+      "audio_ram": "8273e323",
+      "sound": "de878c8d"
     },
     "start": {
       "frame": 3735,
@@ -165,8 +165,8 @@
       "work_ram": "38654d6b",
       "video_ram": "011ffca6",
       "palette_ram": "4bc137b2",
-      "audio_ram": "2f5a4fd0",
-      "sound": "93c32c07"
+      "audio_ram": "e9e5d9e4",
+      "sound": "de55bf4d"
     },
     "play": {
       "frame": 4711,
@@ -174,8 +174,8 @@
       "work_ram": "96dc12c4",
       "video_ram": "f2c076fe",
       "palette_ram": "b6e0778a",
-      "audio_ram": "b1a9debe",
-      "sound": "6449ba1d"
+      "audio_ram": "9a7d1309",
+      "sound": "938beb2f"
     }
   }
 }

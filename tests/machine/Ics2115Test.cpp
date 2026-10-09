@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "machine/Ics2115.hpp"
 
@@ -13,6 +14,8 @@ using pgm::machine::Sdram;
 namespace
 {
 
+constexpr std::uint8_t OSC_LOOP = 0x08;
+constexpr std::uint8_t OSC_BIDIR = 0x10;
 constexpr std::uint8_t OSC_IRQ = 0x20;
 
 /// The sample period with all 32 voices active, in the chip's clocks.
@@ -61,6 +64,13 @@ public:
     mIcs2115.write( 1, reg );
     std::uint8_t const low = mIcs2115.read( 2 );
     return static_cast<std::uint16_t>( ( mIcs2115.read( 3 ) << 8U ) | low );
+  }
+
+  /// One byte of a register: the low one through port 2, the high through 3.
+  std::uint8_t readByte( std::uint8_t reg, bool high )
+  {
+    mIcs2115.write( 1, reg );
+    return mIcs2115.read( high ? 3 : 2 );
   }
 
   /// Runs the chip and returns what it produced.
@@ -184,11 +194,28 @@ TEST_CASE( "a write early in a sample period reaches the voices processed after 
 TEST_CASE( "u-law samples expand to 14 bits and a sign", "[machine][ics2115]" )
 {
   Chip chip{ { 0x80, 0x00, 0xff } };
-  chip.play( 0x400, 0x01 );
+  // Format 11 is u-law too: the u-law bit takes precedence over the 16-bit one.
+  auto const conf = static_cast<std::uint8_t>( GENERATE( 0x01, 0x03 ) );
+  chip.play( 0x400, conf );
   auto const frames = chip.runTo( ( 3 * PERIOD ) + PASS );
   REQUIRE( frames[0].right == fullRight( 32124 ) );
   REQUIRE( frames[1].right == fullRight( -32124 ) );
   REQUIRE( frames[2].right == 0 );
+}
+
+TEST_CASE( "a bidirectional loop turns back at either end", "[machine][ics2115]" )
+{
+  Chip chip{ { 0x10, 0x20, 0x30, 0x40 } };
+  chip.play( 0x400, OSC_LOOP | OSC_BIDIR, 3U << 9U );
+  chip.voice( 0x03, 0x1000 ); // the loop starts at sample 1
+  chip.voice( 0x0b, 0x1000 ); // and so does the oscillator
+  auto const frames = chip.runTo( ( 6 * PERIOD ) + PASS );
+  REQUIRE( frames.size() == 6 );
+  std::array<std::int32_t, 6> const samples = { 0x2000, 0x3000, 0x4000, 0x3000, 0x2000, 0x3000 };
+  for ( std::size_t i = 0; i < samples.size(); ++i )
+  {
+    REQUIRE( frames.at( i ).right == fullRight( samples.at( i ) ) );
+  }
 }
 
 TEST_CASE( "a one-shot voice stops at its end and raises an IRQ the IRQV register reports", "[machine][ics2115]" )
@@ -205,12 +232,47 @@ TEST_CASE( "a one-shot voice stops at its end and raises an IRQ the IRQV registe
   REQUIRE( ( chip->read( 0 ) & 0x82 ) == 0x82 );
   REQUIRE( ( chip->voices()[0].oscCtl & 1U ) != 0 );
 
-  // The oscillator's flag clear, the volume's set: voice 0.
-  REQUIRE( chip.read( 0x0f ) >> 8U == 0x60 );
-  REQUIRE_FALSE( chip->irq() );
-  REQUIRE( ( chip->voices()[0].oscConf & 0x80U ) == 0 );
-  // Nothing pending: the last voice reported, with all three flags set.
-  REQUIRE( chip.read( 0x0f ) >> 8U == 0xe0 );
+  SECTION( "either byte of IRQV consumes the voice it reports" )
+  {
+    // The oscillator's flag clear, the volume's set: voice 0. The low byte
+    // holds nothing, and reads as 1s.
+    bool const high = GENERATE( false, true );
+    REQUIRE( chip.readByte( 0x0f, high ) == ( high ? 0x60 : 0xff ) );
+    REQUIRE_FALSE( chip->irq() );
+    REQUIRE( ( chip->voices()[0].oscConf & 0x80U ) == 0 );
+    // Nothing pending: the last voice reported, with all three flags set.
+    REQUIRE( chip.readByte( 0x0f, true ) == 0xe0 );
+  }
+
+  SECTION( "the IRQ comes back each pass while the ended voice keeps it enabled" )
+  {
+    chip.readByte( 0x0f, true );
+    chip.runTo( ( 4 * PERIOD ) + PASS );
+    REQUIRE( chip->irq() );
+
+    // Disabling it stops it coming back, once the last one is consumed.
+    chip.voice( 0x00, 0x0000 );
+    chip.readByte( 0x0f, true );
+    chip.runTo( ( 5 * PERIOD ) + PASS );
+    REQUIRE_FALSE( chip->irq() );
+  }
+
+  SECTION( "starting the voice again stops the IRQ coming back" )
+  {
+    chip.voice( 0x05, 0x3000 ); // an end it has not reached yet
+    chip.voice( 0x10, 0x0000 );
+    chip.readByte( 0x0f, true );
+    chip.runTo( ( 4 * PERIOD ) + PASS );
+    REQUIRE_FALSE( chip->irq() );
+  }
+
+  SECTION( "so does moving the voice, as the RTL has it" )
+  {
+    chip.voice( 0x0a, 0x0000 );
+    chip.readByte( 0x0f, true );
+    chip.runTo( ( 4 * PERIOD ) + PASS );
+    REQUIRE_FALSE( chip->irq() );
+  }
 }
 
 TEST_CASE( "timer 0 counts its preset times its scale, and raises its INT when 0x43 enables it", "[machine][ics2115]" )
@@ -229,16 +291,17 @@ TEST_CASE( "timer 0 counts its preset times its scale, and raises its INT when 0
   REQUIRE( chip->irq() );
   REQUIRE( chip->read( 0 ) == 0x81 );
 
-  // Reading 0x43 drops the INT, but not the pending flag.
+  // Reading 0x43 acknowledges nothing.
   REQUIRE( ( chip.read( 0x43 ) & 0x03U ) == 0x01 );
+  REQUIRE( chip->irq() );
+
+  // Either byte of the preset acknowledges it: the pending flag and the INT.
+  chip.readByte( 0x40, GENERATE( false, true ) );
   REQUIRE_FALSE( chip->irq() );
+  REQUIRE( ( chip.read( 0x43 ) & 0x03U ) == 0 );
 
   chip.runTo( 65 + 64 );
   REQUIRE( chip->irq() );
-
-  // A 16-bit read of the preset acknowledges it.
-  chip.read( 0x40 );
-  REQUIRE( ( chip.read( 0x43 ) & 0x03U ) == 0 );
 }
 
 TEST_CASE( "voice registers commit on their high byte, and read back their unimplemented bits as 1",
