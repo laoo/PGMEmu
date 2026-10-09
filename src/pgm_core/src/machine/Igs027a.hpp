@@ -3,7 +3,7 @@
 // The IGS027A: an ARM7TDMI with its own ROM and RAM, which the 68000 talks to
 // through a latch and shared RAM. Ported from rtl/igs027a.sv, with the
 // 68000's decode of address_translator.sv and the clocks of PGM.sv, at MiSTer
-// core commit e898860. The three board types differ in where things are, on
+// core commit 6f757e4. The three board types differ in where things are, on
 // either side, and in what raises the ARM's FIQ.
 //
 // The ARM runs on its own clock and is caught up to the 68000 whenever the

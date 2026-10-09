@@ -1,9 +1,9 @@
 #pragma once
 
 // The IGS023 video chip, ported from rtl/igs023.sv, igs023_fg.sv and
-// igs023_bg.sv at MiSTer core commit e898860: its registers, VRAM, palette RAM,
-// raster timing, line counter and interrupts, and the picture it draws; its
-// VRAM arbiter and mixer as at commit 6f757e4. The sprites are SpriteEngine's.
+// igs023_bg.sv at MiSTer core commit 6f757e4: its registers, VRAM, palette RAM,
+// VRAM arbiter, raster timing, line counter and interrupts, and the picture it
+// draws, without the MiSTer's own screen flip. The sprites are SpriteEngine's.
 //
 // A line is drawn whole when the RTL starts fetching it, at dot 638 of the line
 // before, from the registers and VRAM of that moment. The RTL's layers fetch

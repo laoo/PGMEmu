@@ -1,7 +1,7 @@
 #pragma once
 
 // The IGS025 of The Killing Blade and Dragon World 3, ported from
-// rtl/igs025.sv at MiSTer core commit e898860: two words, a command and its
+// rtl/igs025.sv at MiSTer core commit 6f757e4: two words, a command and its
 // data, through which the game reads its id and its region's table, works the
 // chip's checksum, and starts the IGS022's commands. The RTL builds each
 // game's id and table in; here they are the I25 block's (cart::Igs025Table),

@@ -10,9 +10,9 @@ linked into them, in `licenses/`.
 The emulated hardware is a port of **Martin Donlon (Wickerwaka)**'s IGS PGM core for MiSTer,
 https://github.com/MiSTer-devel/Arcade-IGSPGM_MiSTer, released under the GNU General Public
 License, version 2. Each module's header names the RTL file it ports and the commit it was read
-at. Those are commits of https://github.com/wickerwaka/Arcade-IGSPGM_MiSTer, where the core was
-until June 2026; the move to MiSTer-devel rewrote its history, and `e898860` there is `ddd88ca`
-at MiSTer-devel, with the same RTL. The test ROM the regression suite runs, PGMTest, is the
+at. `e898860` is a commit of https://github.com/wickerwaka/Arcade-IGSPGM_MiSTer, where the core
+was until June 2026; the move to MiSTer-devel rewrote its history, and it is `ddd88ca` there,
+with the same RTL. The other commits are MiSTer-devel's. The test ROM the regression suite runs, PGMTest, is the
 core's `testroms/`, built with the fix in [scripts/testroms.patch](scripts/testroms.patch).
 
 ## Code derived from MAME, under BSD-3-Clause

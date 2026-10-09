@@ -1,6 +1,6 @@
 #pragma once
 
-// The sound CPU, tv80s in PGM.sv at MiSTer core commit e898860, on
+// The sound CPU, tv80s in PGM.sv at MiSTer core commit 6f757e4, on
 // floooh/chips' cycle-stepped z80.h (docs/decisions/0003-cpu-cores.md). One
 // tick is one T-state, one pulse of ce_8m. z80.h stays inside Z80.cpp.
 

@@ -3,7 +3,7 @@
 // The Killing Blade's and Dragon World 3's protection: an IGS025 the 68000
 // gives commands, and the IGS022 it starts, which shares 16 KB of RAM with the
 // 68000. Where each answers is address_translator.sv's decode, and the wait
-// for an IGS022 command PGM.sv's prot_dtack_n, at MiSTer core commit e898860.
+// for an IGS022 command PGM.sv's prot_dtack_n, at MiSTer core commit 6f757e4.
 
 #include "Igs022.hpp"
 #include "Igs025.hpp"

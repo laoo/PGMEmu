@@ -90,7 +90,8 @@ std::uint32_t regionOf( cart::PgmImage const* cartridge, std::optional<std::uint
 }
 
 /// The region ASIC3 reports: the game's when its region block is ASIC3's, the
-/// world otherwise, which is what the RTL wires in for every game.
+/// world otherwise. The RTL takes it from its region switches, which its
+/// simulation sets to the world for orlegend.
 std::uint8_t asic3Region( cart::PgmImage const* cartridge, std::uint32_t region )
 {
   if ( cartridge == nullptr || !cartridge->regionInfo() ||

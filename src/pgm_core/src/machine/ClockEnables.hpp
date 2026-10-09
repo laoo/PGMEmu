@@ -1,7 +1,7 @@
 #pragma once
 
 // Counts of the clock enables PGM.sv derives by jtframe_frac_cen (MiSTer core
-// commit e898860), as closed forms of the master tick count, so that a device
+// commit 6f757e4), as closed forms of the master tick count, so that a device
 // can ask how many pulses of its clock have passed without the machine stepping
 // it through every tick.
 //

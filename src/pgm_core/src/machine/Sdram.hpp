@@ -1,7 +1,7 @@
 #pragma once
 
 // The MiSTer core's SDRAM, as its devices read it: every ROM at the place
-// system_consts.sv gives it at MiSTer core commit e898860, and zero wherever
+// system_consts.sv gives it at MiSTer core commit 6f757e4, and zero wherever
 // nothing was loaded. The 68000's ROM space and the IGS023's tile fetches both
 // reach past the ROMs they mean to read, and what they find there is this
 // layout (docs/hardware/differences.md).

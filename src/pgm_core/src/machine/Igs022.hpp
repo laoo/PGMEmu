@@ -1,7 +1,7 @@
 #pragma once
 
 // The IGS022 of The Killing Blade and Dragon World 3, ported from
-// rtl/igs022.sv at MiSTer core commit e898860: an engine that runs commands
+// rtl/igs022.sv at MiSTer core commit 6f757e4: an engine that runs commands
 // over 16 KB of RAM it shares with the 68000, among them DMA from its private
 // 64 KB ROM, decrypted on the way. The IGS025 starts each command (Igs025.hpp).
 //

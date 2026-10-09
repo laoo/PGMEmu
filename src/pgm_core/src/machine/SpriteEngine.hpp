@@ -1,12 +1,11 @@
 #pragma once
 
 // The IGS023's sprite engine, ported from rtl/igs023_sprite.sv and
-// rtl/igs023_buffer.sv at MiSTer core commit e898860 as far as they decide what
-// is drawn, and the line buffer's erased pixel as at 6f757e4. Their timing is
-// not ported: the RTL draws a frame's sprites from the list it copied at line
-// 221 of the frame before, a line buffer at a time, and the result depends on
-// that copy and on the ROMs alone. So the emulator draws all 224 lines at once
-// from the copy.
+// rtl/igs023_buffer.sv at MiSTer core commit 6f757e4 as far as they decide what
+// is drawn. Their timing is not ported: the RTL draws a frame's sprites from
+// the list it copied at line 221 of the frame before, a line buffer at a time,
+// and the result depends on that copy and on the ROMs alone. So the emulator
+// draws all 224 lines at once from the copy.
 
 #include "Sdram.hpp"
 

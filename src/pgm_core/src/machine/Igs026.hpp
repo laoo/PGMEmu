@@ -1,7 +1,7 @@
 #pragma once
 
 // The IGS026 glue between the 68000, the Z80 and the RTC, ported from
-// rtl/igs026_x.sv at MiSTer core commit e898860: the sound latches, the Z80's
+// rtl/igs026_x.sv at MiSTer core commit 6f757e4: the sound latches, the Z80's
 // reset, bus request and NMI, the 68000's window onto the Z80's 64 KB of RAM,
 // the Z80's I/O map onto the ICS2115 and the latches, and the RTC's serial port.
 //

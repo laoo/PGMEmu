@@ -2,7 +2,7 @@
 
 // The 68000's address space: the chip selects of rtl/address_translator.sv and
 // the order PGM.sv's data multiplexer gives them, at MiSTer core commit
-// e898860. A cartridge's protection takes its addresses before the board's
+// 6f757e4. A cartridge's protection takes its addresses before the board's
 // own decode (Protection.hpp).
 
 #include "Asic3.hpp"
