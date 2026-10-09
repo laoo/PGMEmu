@@ -366,7 +366,7 @@ void drawSprites( SpriteList const& list, Sdram const& sdram, SpriteFrame& frame
 {
   for ( SpriteLine& line : frame )
   {
-    line.fill( 0 );
+    line.fill( SPRITE_ERASED );
   }
 
   std::vector<Sprite> sprites;

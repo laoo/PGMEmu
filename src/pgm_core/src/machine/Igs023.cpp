@@ -24,6 +24,10 @@ constexpr std::size_t SCROLL_FG_Y = 5;
 constexpr std::size_t SCROLL_FG_X = 6;
 constexpr std::uint16_t SPRITE_DMA_ENABLE = 1U << 0U;
 constexpr std::uint16_t CPU_BUS_MASTER = 1U << 10U;
+constexpr std::uint16_t TEXT_DISABLE = 1U << 11U;
+constexpr std::uint16_t BACKGROUND_DISABLE = 1U << 12U;
+// Only high-priority sprites; low-priority ones are drawn regardless.
+constexpr std::uint16_t SPRITES_DISABLE = 1U << 13U;
 
 // The text layer's fetch holds VRAM from the master tick after the dot counter
 // reaches 638, for 464 pulses of ce_33m: 464 * 908 / 615 master ticks.
@@ -41,9 +45,21 @@ constexpr std::uint32_t BACKGROUND_PALETTE = 0x400;
 constexpr std::uint32_t BACKDROP = 0x3ff;
 constexpr std::uint32_t TEXT_PALETTE = 0x800;
 
-// A layer pixel, as the mixer is handed it: the palette word, or NONE where
-// the layer is transparent.
+// A layer pixel, as the mixer is handed it: the palette word, its transparent
+// pen included, or NONE where the debugger has hidden the layer. A tile's
+// transparent pen is its last: 0xf of the text's 4 bits, 0x1f of the
+// background's 5, which NONE also has.
 constexpr std::uint16_t NONE = 0xffff;
+
+bool textOpaque( std::uint16_t pixel )
+{
+  return ( pixel & 0xfU ) != 0xfU;
+}
+
+bool backgroundOpaque( std::uint16_t pixel )
+{
+  return ( pixel & 0x1fU ) != 0x1fU;
+}
 
 // Which dot of the raster is current after `ticks` master ticks. The RTL's
 // pixel enable first fires on the fifth clock after power-up and on every
@@ -76,6 +92,15 @@ Igs023::Igs023( Sdram const& sdram, TileMapping tiles, std::span<std::uint8_t co
       mNextSprites{ std::make_unique<SpriteFrame>() }, mBuilding( static_cast<std::size_t>( WIDTH * HEIGHT * 4 ), 0 ),
       mFrame( static_cast<std::size_t>( WIDTH * HEIGHT * 4 ), 0 )
 {
+  // The RTL's buffers hold zeros until each line is first shown and erased;
+  // they start erased here (docs/hardware/differences.md).
+  for ( SpriteFrame* frame : { mSprites.get(), mNextSprites.get() } )
+  {
+    for ( SpriteLine& line : *frame )
+    {
+      line.fill( SPRITE_ERASED );
+    }
+  }
 }
 
 void Igs023::advanceTo( Time now )
@@ -242,7 +267,7 @@ void Igs023::textRow( std::uint32_t code,
   for ( std::uint32_t pixel = 0; pixel < 8; ++pixel )
   {
     std::uint32_t const value = ( pixels >> ( pixel * 4 ) ) & 0xfU;
-    out.at( flipX ? 7 - pixel : pixel ) = value == 0xf ? NONE : static_cast<std::uint16_t>( palette + value );
+    out.at( flipX ? 7 - pixel : pixel ) = static_cast<std::uint16_t>( palette + value );
   }
 }
 
@@ -269,7 +294,7 @@ void Igs023::backgroundRow( std::uint32_t code,
     std::uint64_t const pair =
         words.at( bit >> 5U ) | ( static_cast<std::uint64_t>( words.at( ( bit >> 5U ) + 1 ) ) << 32U );
     std::uint32_t const value = static_cast<std::uint32_t>( pair >> ( bit & 31U ) ) & 0x1fU;
-    out.at( flipX ? 31 - pixel : pixel ) = value == 0x1f ? NONE : static_cast<std::uint16_t>( palette + value );
+    out.at( flipX ? 31 - pixel : pixel ) = static_cast<std::uint16_t>( palette + value );
   }
 }
 
@@ -333,11 +358,18 @@ void Igs023::drawBackground( int line, std::array<std::uint16_t, WIDTH>& out ) c
 
 void Igs023::drawLine( int line )
 {
+  // The flags register turns layers off. The background's pixels are still
+  // fetched with it off, as the mixer may show them below.
+  std::uint16_t const flags = controlFlags();
+  bool const textOn = ( flags & TEXT_DISABLE ) == 0;
+  bool const backgroundOn = ( flags & BACKGROUND_DISABLE ) == 0;
+  bool const spritesOn = ( flags & SPRITES_DISABLE ) == 0;
+
   std::array<std::uint16_t, WIDTH> text{};
   std::array<std::uint16_t, WIDTH> background{};
   text.fill( NONE );
   background.fill( NONE );
-  if ( mLayers.text )
+  if ( mLayers.text && textOn )
   {
     drawText( line, text );
   }
@@ -345,28 +377,43 @@ void Igs023::drawLine( int line )
   {
     drawBackground( line, background );
   }
-  static SpriteLine const NO_SPRITES{};
+  static SpriteLine const NO_SPRITES = []
+  {
+    SpriteLine erased{};
+    erased.fill( SPRITE_ERASED );
+    return erased;
+  }();
   SpriteLine const& sprites = mLayers.sprites ? mSprites->at( static_cast<std::size_t>( line ) ) : NO_SPRITES;
 
   std::size_t at = static_cast<std::size_t>( line ) * WIDTH * 4;
   for ( std::size_t i = 0; i < WIDTH; ++i )
   {
-    // FG over high-priority sprites over BG over low-priority sprites.
+    // FG over high-priority sprites over BG over low-priority sprites, as
+    // igs023.sv mixes them. A pixel no sprite drew is a low-priority one of
+    // the backdrop's colour; under a disabled high-priority sprite and a
+    // transparent background, the background's pen shows.
     std::uint16_t const sprite = sprites[i];
-    bool const spriteDrawn = ( sprite & 0x800U ) != 0;
     bool const spriteHigh = ( sprite & 0x400U ) == 0;
-    std::uint32_t word = BACKDROP;
-    if ( text[i] != NONE )
+    std::uint32_t word = 0;
+    if ( textOpaque( text[i] ) )
     {
       word = text[i];
     }
-    else if ( spriteDrawn && ( spriteHigh || background[i] == NONE ) )
+    else if ( spriteHigh && spritesOn )
     {
       word = SPRITE_PALETTE + ( sprite & 0x3ffU );
     }
-    else if ( background[i] != NONE )
+    else if ( backgroundOn && backgroundOpaque( background[i] ) )
     {
       word = background[i];
+    }
+    else if ( !spriteHigh )
+    {
+      word = SPRITE_PALETTE + ( sprite & 0x3ffU );
+    }
+    else
+    {
+      word = background[i] == NONE ? BACKDROP : background[i];
     }
 
     for ( std::uint8_t const channel : colour( word ) )

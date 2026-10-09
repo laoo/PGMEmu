@@ -34,6 +34,8 @@ The emulator runs a cartridge as its image holds it ([0014](../decisions/0014-im
 |---|---|---|---|
 | VRAM contention | Wait states from `igs023.sv`'s byte-wide state machine, and a wait to the end of the text layer's fetch window. The background's reads of a few dots per tile are not counted. | The same, and the background's reads. | open ([question](../open-questions.md)) |
 | When the picture is read | A line at its start, sprites a frame at a time ([0011](../decisions/0011-video-is-drawn-by-line-and-by-frame.md)). | Dot by dot, sprites as line buffers free. | not planned |
+| Palette RAM's port | Never taken from the picture. | One port: while the 68000 reads or writes palette RAM, the dot being drawn shows the colour it addresses. PGMTest's `system_basics` writes it on lines 100-120 and leaves scattered dots there. | not planned |
+| Sprite line buffers at power-up | Start erased: where no layer draws, the backdrop shows. | Hold zeros until a line is first shown and erased, so the first frame shows sprite palette word 0 at high priority there. | not planned |
 | A game's region | The one its image holds (ASIC3's default, the IGS025's default, what the ARM's internal ROM holds), or another of the image's, chosen when it is loaded (`emu.load_game`, `emu.set_region`). | ASIC3 always 0, the world; the IGS025 the world for each game; the ARM what its internal ROM holds. Unchosen, the two agree for every image built from the workspace's sets. | — |
 | The IGS027A's ARM | Runs whole instructions, each access one cycle of its clock, and is brought up to the 68000's time when the 68000 reaches the latch or the shared RAM: what the ARM does is seen up to an instruction's cycles early or late. Its writes land at once. | Interleaves with the 68000 a clock at a time; a write lands a cycle after the core makes it; cache misses stall the ARM, which then catches up, and stall the 68000 on the shared RAM. | not planned |
 | IGS022's timing | Commands run whole when the IGS025 starts them; the 68000's write waits the ticks the RTL's engine would take if every ROM read hit `prot_cache.sv`. The DMA the engine runs at reset is done at once. | The engine's states one a master tick, ROM reads waiting on DDR when they miss; the reset's DMA takes some 8,200 ticks and more. | not planned |
@@ -64,8 +66,8 @@ emulator's modules that cite an earlier commit are still the earlier RTL.
   but begin 17 and 24 samples early, for the reason in the table above.
 - **PGMTest's video pages:** `bg_test`, `sprite_test` and `video_timing` match the RTL picture
   pixel for pixel. `fg_test` differs in its rightmost column, for the reason in the table above.
-  `system_basics` differs in rows 99-118, where the simulation shows scattered pixels the
-  emulator does not draw. The pages' work RAM, which holds what they measured, differs in a few
+  `system_basics` differs in rows 99-118, where the simulation shows the dots its palette
+  writes leave, for the reason in the table above. The pages' work RAM, which holds what they measured, differs in a few
   bytes.
 - **The Killing Blade and Dragon World 3:** their games first reach the IGS025 at frame 767. At
   frame 1100, past their start-up exchanges with it and the IGS022 and into their warning

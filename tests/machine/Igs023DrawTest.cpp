@@ -125,3 +125,33 @@ TEST_CASE( "the background draws 5-bit tiles as a stream, scrolled per line", "[
   REQUIRE( chip.redAt( 1, 0 ) == ( ( 0x420 + 4 ) & 0x1fU ) );
   REQUIRE( chip.redAt( 0, 1 ) == ( ( 0x420 + 4 ) & 0x1fU ) );
 }
+
+TEST_CASE( "the flags register turns the text layer and the background off", "[machine][igs023]" )
+{
+  constexpr std::uint32_t flags = 0xb0e000;
+  Chip chip;
+  chip.tileBytes( 32, { 0x11, 0x11, 0x11, 0x11 } );    // text tile 1: colour 1
+  chip.tileBytes( std::size_t{ 2 } * 32 * 20, { 3 } ); // background tile 2: colour 3 first
+  chip.word( TEXT_MAP, 1 );
+  chip.word( VRAM, 2 );
+  chip.markPalette( 0x801 );
+  chip.markPalette( 0x403 );
+  chip.markPalette( 0x3ff );
+
+  SECTION( "both on: the text" )
+  {
+    REQUIRE( chip.redAt( 0, 0 ) == 1 );
+  }
+
+  SECTION( "the text off: the background" )
+  {
+    chip.word( flags, 1U << 11U );
+    REQUIRE( chip.redAt( 0, 0 ) == 3 );
+  }
+
+  SECTION( "both off: the backdrop, a low-priority sprite pixel no sprite drew" )
+  {
+    chip.word( flags, 3U << 11U );
+    REQUIRE( chip.redAt( 0, 0 ) == 0x1f );
+  }
+}

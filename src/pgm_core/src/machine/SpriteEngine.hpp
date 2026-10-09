@@ -2,10 +2,11 @@
 
 // The IGS023's sprite engine, ported from rtl/igs023_sprite.sv and
 // rtl/igs023_buffer.sv at MiSTer core commit e898860 as far as they decide what
-// is drawn. Their timing is not ported: the RTL draws a frame's sprites from
-// the list it copied at line 221 of the frame before, a line buffer at a time,
-// and the result depends on that copy and on the ROMs alone. So the emulator
-// draws all 224 lines at once from the copy.
+// is drawn, and the line buffer's erased pixel as at 6f757e4. Their timing is
+// not ported: the RTL draws a frame's sprites from the list it copied at line
+// 221 of the frame before, a line buffer at a time, and the result depends on
+// that copy and on the ROMs alone. So the emulator draws all 224 lines at once
+// from the copy.
 
 #include "Sdram.hpp"
 
@@ -36,6 +37,11 @@ struct SpriteList
 /// its colour.
 using SpriteLine = std::array<std::uint16_t, 448>;
 using SpriteFrame = std::array<SpriteLine, 224>;
+
+/// What the line buffer holds where no sprite drew: igs023_buffer.sv erases
+/// each line after showing it to a low-priority pixel of colour 0x3ff, which
+/// is the backdrop.
+constexpr std::uint16_t SPRITE_ERASED = 0xfff;
 
 /// Copies the sprite list from work RAM as the RTL's DMA does: up to 256
 /// entries, ending before the first whose size word is zero; when 255 entries

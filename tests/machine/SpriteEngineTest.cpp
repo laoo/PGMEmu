@@ -93,13 +93,13 @@ TEST_CASE( "a sprite's mask decides its pixels, and only opaque ones take colour
   pgm::machine::drawSprites( list, roms.sdram(), *frame );
 
   REQUIRE( colourAt( *frame, 50, 100 ) == 1 );
-  REQUIRE( frame->at( 50 ).at( 101 ) == 0 );
+  REQUIRE( frame->at( 50 ).at( 101 ) == pgm::machine::SPRITE_ERASED );
   REQUIRE( colourAt( *frame, 50, 102 ) == 2 );
   REQUIRE( colourAt( *frame, 50, 103 ) == 3 );
   // Drawn pixels carry the sprite's palette and the drawn bit.
   REQUIRE( ( frame->at( 50 ).at( 100 ) & 0xbe0U ) == ( 0x800U | ( 3U << 5U ) ) );
-  REQUIRE( frame->at( 49 ).at( 100 ) == 0 );
-  REQUIRE( frame->at( 51 ).at( 100 ) == 0 );
+  REQUIRE( frame->at( 49 ).at( 100 ) == pgm::machine::SPRITE_ERASED );
+  REQUIRE( frame->at( 51 ).at( 100 ) == pgm::machine::SPRITE_ERASED );
 }
 
 TEST_CASE( "a flipped sprite is drawn from its right edge", "[machine][sprites]" )
@@ -116,7 +116,7 @@ TEST_CASE( "a flipped sprite is drawn from its right edge", "[machine][sprites]"
 
   REQUIRE( colourAt( *frame, 10, 115 ) == 1 );
   REQUIRE( colourAt( *frame, 10, 114 ) == 2 );
-  REQUIRE( frame->at( 10 ).at( 100 ) == 0 );
+  REQUIRE( frame->at( 10 ).at( 100 ) == pgm::machine::SPRITE_ERASED );
 }
 
 TEST_CASE( "zoom 0 drops every other pixel and 31 doubles most of them", "[machine][sprites]" )
@@ -135,7 +135,7 @@ TEST_CASE( "zoom 0 drops every other pixel and 31 doubles most of them", "[machi
   REQUIRE( colourAt( *frame, 0, 0 ) == 1 );
   REQUIRE( colourAt( *frame, 0, 1 ) == 3 );
   REQUIRE( colourAt( *frame, 0, 7 ) == 15 );
-  REQUIRE( frame->at( 0 ).at( 8 ) == 0 );
+  REQUIRE( frame->at( 0 ).at( 8 ) == pgm::machine::SPRITE_ERASED );
 
   REQUIRE( colourAt( *frame, 1, 200 ) == 1 );
   REQUIRE( colourAt( *frame, 1, 201 ) == 1 );
