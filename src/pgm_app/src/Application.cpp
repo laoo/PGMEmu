@@ -34,6 +34,7 @@ constexpr char const* SCREEN_WINDOW = "Screen";
 constexpr char const* STATUS_WINDOW = "Status";
 constexpr char const* SOUND_WINDOW = "Sound";
 constexpr char const* VIDEO_WINDOW = "Video";
+constexpr char const* CPU_WINDOW = "CPU state";
 
 std::string sdlError( std::string const& what )
 {
@@ -120,6 +121,8 @@ Application::Application( SDL_Window* window, SDL_GPUDevice* device, Settings se
                                              static_cast<std::uint32_t>( video::SCREEN_HEIGHT ) ) },
       mFrame{ makeTestPattern() }, mAudio{ AudioOutput::open() },
       mEmulation{ std::make_unique<EmulationThread>( std::move( settings ), mAudio.get() ) },
+      mCpu{ std::make_unique<CpuWindow>( [this]( std::string const& method, control::Json params )
+                                         { return request( method, std::move( params ) ); } ) },
       mVideo{ std::make_unique<VideoWindow>( device,
                                              [this]( std::string const& method, control::Json params )
                                              { return request( method, std::move( params ) ); } ) },
@@ -199,6 +202,7 @@ Application::~Application()
   ImGui_ImplSDL3_Shutdown();
   ImGui_ImplSDLGPU3_Shutdown();
   ImGui::DestroyContext();
+  mCpu.reset();
   mScreen.reset();
   mRenderer.reset();
   mVideo.reset();
@@ -490,6 +494,7 @@ void Application::drawInterface()
   drawScreenWindow();
   drawStatusWindow();
   drawSoundWindow();
+  mCpu->draw( mShowCpu );
   mVideo->draw( mShowVideo );
   mInputWindow->draw( mShowInput );
 
@@ -577,6 +582,7 @@ void Application::drawMenuBar()
     ImGui::MenuItem( SOUND_WINDOW, nullptr, &mShowSound );
     ImGui::MenuItem( VIDEO_WINDOW, nullptr, &mShowVideo );
     ImGui::MenuItem( "Input", nullptr, &mShowInput );
+    ImGui::MenuItem( CPU_WINDOW, nullptr, &mShowCpu );
     ImGui::Separator();
     ImGui::MenuItem( "ImGui demo", nullptr, &mShowImguiDemo );
     ImGui::EndMenu();

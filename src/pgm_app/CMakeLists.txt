@@ -1,6 +1,7 @@
 add_executable( pgm_app
   src/Application.cpp
   src/AudioOutput.cpp
+  src/CpuWindow.cpp
   src/DisplaySettings.cpp
   src/EmulationThread.cpp
   src/Gamepads.cpp

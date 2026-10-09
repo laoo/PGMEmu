@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AudioOutput.hpp"
+#include "CpuWindow.hpp"
 #include "EmulationThread.hpp"
 #include "Gamepads.hpp"
 #include "GpuTexture.hpp"
@@ -115,6 +116,7 @@ private:
   std::unique_ptr<server::TcpLineServer> mLineServer;
   std::unique_ptr<server::McpServer> mMcp;
   std::unique_ptr<server::McpHttpServer> mMcpHttp;
+  std::unique_ptr<CpuWindow> mCpu;
   std::unique_ptr<VideoWindow> mVideo;
   Gamepads mGamepads;
   /// Where the input map is kept, beside imgui.ini; empty when there is no
@@ -131,6 +133,7 @@ private:
   bool mScreenShown{};
   std::string mImguiIniPath;
   bool mQuit{};
+  bool mShowCpu{};
   bool mShowStatus{ true };
   bool mShowSound{};
   bool mShowInput{};
