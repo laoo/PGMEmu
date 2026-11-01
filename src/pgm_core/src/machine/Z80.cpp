@@ -127,6 +127,44 @@ bool Z80::tick( Z80Bus& bus, bool busRequested )
   return false;
 }
 
+void Z80::run(
+    Z80Bus& bus, std::span<std::uint8_t, 0x10000> ram, std::int64_t& pulses, std::int64_t until, bool busRequested )
+{
+  State& s = *mState;
+  std::uint64_t pins = s.pins;
+  while ( pulses < until )
+  {
+    ++pulses;
+    pins &= ~( Z80_INT | Z80_NMI );
+    pins |= ( s.interrupt ? Z80_INT : 0 ) | ( s.nmi ? Z80_NMI : 0 );
+    pins = z80_tick( &s.cpu, pins );
+    if ( busRequested && beginsFetch( pins ) )
+    {
+      s.holding = true;
+      break;
+    }
+    if ( ( pins & Z80_MREQ ) != 0 )
+    {
+      std::uint16_t const address = Z80_GET_ADDR( pins );
+      if ( ( pins & Z80_RD ) != 0 )
+      {
+        Z80_SET_DATA( pins, static_cast<std::uint64_t>( ram[address] ) );
+      }
+      else if ( ( pins & Z80_WR ) != 0 )
+      {
+        ram[address] = Z80_GET_DATA( pins );
+      }
+    }
+    else if ( ( pins & Z80_IORQ ) != 0 )
+    {
+      access( pins, bus );
+      s.pins = pins;
+      return;
+    }
+  }
+  s.pins = pins;
+}
+
 void Z80::resume( Z80Bus& bus )
 {
   if ( mState->holding )

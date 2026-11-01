@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 
 namespace pgm::machine
 {
@@ -57,6 +58,15 @@ public:
   /// grant its bus, and the answer is true. resume() makes the fetch when the
   /// bus is given back.
   bool tick( Z80Bus& bus, bool busRequested = false );
+
+  /// T-states until `pulses` reaches `until`, each as tick() makes it and
+  /// counted in `pulses` before it is made, so that an I/O handler sees the
+  /// count of the T-state it is in. Memory accesses are made on `ram`
+  /// directly, I/O on `bus`. Stops short after an I/O access, whose side
+  /// effects the caller may have to act on before the next T-state, and
+  /// where tick() would have stopped for the bus.
+  void
+  run( Z80Bus& bus, std::span<std::uint8_t, 0x10000> ram, std::int64_t& pulses, std::int64_t until, bool busRequested );
 
   /// Makes the fetch the Z80 stopped at, with the bus given back.
   void resume( Z80Bus& bus );

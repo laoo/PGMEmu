@@ -2,6 +2,8 @@
 
 #include "ClockEnables.hpp"
 
+#include <algorithm>
+
 namespace pgm::machine
 {
 
@@ -191,10 +193,17 @@ void Igs026::advanceTo( Time now )
     {
       syncIcs2115( mZ80Pulses + 1 );
     }
+    if ( mBreakpoints.empty() )
+    {
+      // As many T-states as fall before the ICS2115 is next due, in one go.
+      // An I/O access ends the run early, as it may have moved that.
+      std::int64_t const limit = mIcs2115DueAt == Ics2115::NEVER ? target : std::min( target, mIcs2115DueAt - 1 );
+      mZ80.run( side, mZ80Ram, mZ80Pulses, std::max( limit, mZ80Pulses + 1 ), busRequested() );
+      continue;
+    }
     ++mZ80Pulses;
     mZ80.tick( side, busRequested() );
-    if ( !mBreakpoints.empty() && !mBreakpointHit && mZ80.instructionBoundary() &&
-         mBreakpoints.contains( mZ80.address() ) )
+    if ( !mBreakpointHit && mZ80.instructionBoundary() && mBreakpoints.contains( mZ80.address() ) )
     {
       // The registers' pc has already moved past the opcode being fetched.
       mBreakpointHit = mZ80.registers();
