@@ -20,7 +20,10 @@
 #define MOIRA_PRECISE_TIMING true
 
 // The client interface is a set of virtual functions. A non-virtual interface
-// is faster, and the switch is one line here once profiling says it matters.
+// would be faster, but Moira then calls functions that one class in the
+// program defines, and the 68000 single-step suite drives a client of its own
+// beside M68k (tests/cpu/M68kSingleStepTest.cpp); it stays virtual until that
+// suite can run through M68k.
 #define MOIRA_VIRTUAL_API true
 
 // A word or long access at an odd address raises an address error, as on the

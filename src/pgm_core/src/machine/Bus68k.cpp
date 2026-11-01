@@ -12,11 +12,24 @@ constexpr std::uint32_t ADDRESS_MASK = 0xffffffU;
 
 std::uint16_t RomSpace::word( std::uint32_t address ) const
 {
+  // Each program ROM fills its region of SDRAM from the start, so a word
+  // within it is read straight; past it, the SDRAM's layout answers.
+  auto const within = []( std::span<std::uint8_t const> rom, std::uint32_t offset, std::uint16_t& word )
+  {
+    if ( offset + 1 >= rom.size() )
+    {
+      return false;
+    }
+    word = static_cast<std::uint16_t>( rom[offset] | ( rom[offset + 1] << 8U ) );
+    return true;
+  };
+  std::uint16_t word = 0;
   if ( cartridge && address >= cartBase )
   {
-    return sdram->word( Sdram::CART_PROGRAM_AT + ( address - cartBase ) );
+    std::uint32_t const offset = address - cartBase;
+    return within( sdram->cartProgram, offset, word ) ? word : sdram->word( Sdram::CART_PROGRAM_AT + offset );
   }
-  return sdram->word( Sdram::BIOS_PROGRAM_AT + address );
+  return within( sdram->biosProgram, address, word ) ? word : sdram->word( Sdram::BIOS_PROGRAM_AT + address );
 }
 
 Bus68k::Bus68k( RomSpace rom, BusDevices devices, Time& time, std::span<std::uint8_t> workRam )
