@@ -829,10 +829,22 @@ void Application::drawSoundWindow()
     auto const& voices = response.at( "result" ).at( "voices" );
     ImGuiTableFlags const flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY |
                                   ImGuiTableFlags_SizingFixedFit;
-    if ( ImGui::BeginTable( "voices", 9, flags ) )
+    if ( ImGui::BeginTable( "voices", 13, flags ) )
     {
       ImGui::TableSetupScrollFreeze( 0, 1 );
-      for ( char const* heading : { "#", "conf", "ctl", "fc", "address", "end", "level", "pan", "vctrl" } )
+      for ( char const* heading : { "#",
+                                    "conf",
+                                    "ctl",
+                                    "fc",
+                                    "address",
+                                    "osc start",
+                                    "osc end",
+                                    "volume",
+                                    "vol start",
+                                    "vol end",
+                                    "vol incr",
+                                    "pan",
+                                    "vctrl" } )
       {
         ImGui::TableSetupColumn( heading );
       }
@@ -857,9 +869,17 @@ void Application::drawSoundWindow()
         ImGui::TableNextColumn();
         ImGui::Text( "%x:%05x", field( "osc_saddr" ) & 0xfU, field( "osc_acc" ) >> 9U );
         ImGui::TableNextColumn();
+        ImGui::Text( "%05x", field( "osc_start" ) >> 9U );
+        ImGui::TableNextColumn();
         ImGui::Text( "%05x", field( "osc_end" ) >> 9U );
         ImGui::TableNextColumn();
-        ImGui::Text( "%03x", field( "vol_acc" ) >> 14U );
+        ImGui::Text( "%03x.%01x", field( "vol_acc" ) >> 14U, ( field( "vol_acc" ) >> 10U ) & 0xfU );
+        ImGui::TableNextColumn();
+        ImGui::Text( "%02x", field( "vol_start" ) >> 18U );
+        ImGui::TableNextColumn();
+        ImGui::Text( "%02x", field( "vol_end" ) >> 18U );
+        ImGui::TableNextColumn();
+        ImGui::Text( "%02x", field( "vol_incr" ) );
         ImGui::TableNextColumn();
         ImGui::Text( "%02x", field( "vol_pan" ) );
         ImGui::TableNextColumn();
