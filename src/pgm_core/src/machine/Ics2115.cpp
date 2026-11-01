@@ -168,7 +168,18 @@ std::size_t Ics2115::activeVoices() const
 std::int64_t Ics2115::nextEvent() const
 {
   // A pass runs to its end whether or not the chip has been stopped since.
-  std::int64_t const voice = mPass.active ? mPass.start + VOICE_DUE.at( mPass.next ) : NEVER;
+  // Only a voice with an IRQ enabled can raise the line as it is processed;
+  // the pass's others wait for the next event, or the Z80's next access.
+  std::int64_t voice = NEVER;
+  for ( std::size_t index = mPass.active ? mPass.next : VOICES; index <= mActiveOsc && index < VOICES; ++index )
+  {
+    Voice const& v = mVoices[index];
+    if ( ( v.oscConf & OSC_IRQ ) != 0 || ( v.volCtrl & VOL_IRQ ) != 0 )
+    {
+      voice = mPass.start + VOICE_DUE[index];
+      break;
+    }
+  }
   if ( ( mSysCtl & SYS_CTL_RUN ) != SYS_CTL_RUN )
   {
     return voice;
@@ -208,6 +219,11 @@ void Ics2115::advanceTo( std::int64_t pulses )
     {
       pulse();
     }
+  }
+  // The voices due by now that no event stopped at.
+  while ( mPass.active && mPass.start + VOICE_DUE[mPass.next] <= mPulses )
+  {
+    processNextVoice();
   }
 }
 

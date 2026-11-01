@@ -50,9 +50,11 @@ public:
   /// Runs the chip until `pulses` pulses of ce_33m have passed since power-up.
   void advanceTo( std::int64_t pulses );
 
-  /// The pulse at which the chip next acts by itself, a sample tick or a timer
-  /// expiring, or NEVER while it is stopped. Until then only the Z80's
-  /// accesses can change its IRQ.
+  /// The pulse at which the chip next acts by itself in a way the Z80 could
+  /// see, or NEVER while it is stopped: a timer expiring, a sample tick, or
+  /// the sequencer reaching a voice that has an IRQ enabled. Until then only
+  /// the Z80's accesses can change its IRQ; the other voices are processed,
+  /// in their order, when the chip is next brought up to date.
   [[nodiscard]] std::int64_t nextEvent() const;
 
   /// The Z80's port reads and writes, `port` 0 to 3.

@@ -106,8 +106,10 @@ How some of these modules work, and why:
   and row drawing state by state, its zoom patterns and its quirks included.
 - **`Igs026` keeps the sound side's time.** The Z80 runs a T-state per ce_8m pulse, and the
   ICS2115 is brought to the Z80's time whenever the Z80 reaches it and whenever it next acts
-  on its own (a sample tick, a timer), which is when its IRQ, the Z80's /INT, can change.
-  Between those the Z80 runs without looking at it.
+  on its own in a way the Z80 could see (a sample tick, a timer, a voice with an IRQ enabled
+  reached by its sequencer), which is when its IRQ, the Z80's /INT, can change. Between those
+  the Z80 runs without looking at it, and the other voices are processed, in their order, when
+  the chip is next brought up to date.
 - **`Ics2115`: audio is produced at the chip's own rate.** That is one stereo sample every
   `(oscillators + 1) × 32` chip clocks. Resampling to the host rate is the frontend's job, so
   the suite can compare the native stream with WAVs captured from the RTL simulation. A sample
