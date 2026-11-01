@@ -1,6 +1,7 @@
 #include "SpriteEngine.hpp"
 
 #include <bit>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -48,6 +49,28 @@ struct ColourOffset
     {
       words = ( words - words3 - 1 ) & 0x1ffffffU;
       sub = sub + 3 - sub3;
+    }
+  }
+
+  /// advance( 1, backwards ), as every opaque pixel moves.
+  void next( bool backwards )
+  {
+    if ( !backwards )
+    {
+      if ( ++sub == 3 )
+      {
+        sub = 0;
+        words = ( words + 1 ) & 0x1ffffffU;
+      }
+    }
+    else if ( sub > 0 )
+    {
+      --sub;
+    }
+    else
+    {
+      sub = 2;
+      words = ( words - 1 ) & 0x1ffffffU;
     }
   }
 };
@@ -113,25 +136,29 @@ struct Sprite
 
   [[nodiscard]] bool lineBit( std::uint16_t sourceLine ) const
   {
-    return ( ( SCALE_PATTERN.at( scaleY ) >> ( sourceLine & 31U ) ) & 1U ) != 0;
+    return ( ( SCALE_PATTERN[scaleY] >> ( sourceLine & 31U ) ) & 1U ) != 0;
   }
 };
 
 class Drawer
 {
 public:
-  Drawer( Sprite const& sprite, Sdram const& sdram ) : mSprite{ sprite }, mSdram{ sdram } {}
+  /// The B ROM holds the masks and the A ROM the colours; each is read at a
+  /// word index of its own, and past its end the SDRAM answers zero.
+  Drawer( Sprite const& sprite, Sdram const& sdram )
+      : mSprite{ sprite }, mMasks{ sdram.cartBRom }, mColours{ sdram.cartARom }
+  {
+  }
 
   [[nodiscard]] std::uint16_t mask( std::uint16_t offset ) const
   {
     std::uint32_t const address = ( mSprite.flipY ? mSprite.maskBase - offset : mSprite.maskBase + offset ) & 0x7fffffU;
-    return mSdram.word( Sdram::CART_B_ROM_AT + ( address * 2 ) );
+    return romWord( mMasks, address );
   }
 
   [[nodiscard]] std::uint16_t colour( ColourOffset const& at ) const
   {
-    std::uint16_t const word = mSdram.word( Sdram::CART_A_ROM_AT + ( at.words * 2 ) );
-    return static_cast<std::uint16_t>( ( word >> ( 5 * at.sub ) ) & 0x1fU );
+    return static_cast<std::uint16_t>( ( romWord( mColours, at.words ) >> ( 5 * at.sub ) ) & 0x1fU );
   }
 
   /// Opaque pixels of a mask word: those whose bit is clear.
@@ -213,53 +240,82 @@ public:
   void drawRow( Progress& state, SpriteLine& line ) const
   {
     Progress const saved = state;
-    std::uint32_t xBits = SCALE_PATTERN.at( mSprite.scaleX );
+    std::uint32_t xBits = SCALE_PATTERN[mSprite.scaleX];
     std::uint32_t position = 0;
     bool const mirrored = mSprite.flipX != mSprite.flipY;
     auto const tag = static_cast<std::uint16_t>( 0x800U | ( mSprite.lowPriority ? 0x400U : 0U ) |
                                                  ( static_cast<std::uint32_t>( mSprite.palette ) << 5U ) );
 
+    // Pixel `position` lands at `first` plus or minus it, as the row is
+    // drawn forwards or mirrored; 11 bits wide, as the RTL counts it.
+    std::uint32_t const first = mirrored ? mSprite.x + mSprite.scaledWidth - 1 : mSprite.x;
+    std::uint32_t const direction = mirrored ? 0xffffffffU : 1U;
+    // How many pixels a source pixel makes, by its bit of the scale pattern:
+    // zooming in repeats the marked ones, zooming out drops them. A run of
+    // pixels makes one each, plus or minus its marked ones.
+    std::array<std::uint32_t, 2> const copiesOf{ 1U, mSprite.zoomX() ? 2U : 0U };
+    bool const backwards = mSprite.flipY;
+    // Pixel k of a mask word takes bit k of the pattern, which turns one bit
+    // a pixel, so the words take its two halves in turn. For each half, how
+    // many pixels the first k source pixels make, k from 0 to 16.
+    std::array<std::array<std::uint8_t, 17>, 2> madeBefore{};
+    for ( std::size_t half = 0; half < 2; ++half )
+    {
+      std::uint32_t const pattern = ( xBits >> ( 16 * half ) ) & 0xffffU;
+      std::uint8_t sum = 0;
+      for ( unsigned k = 0; k < 16; ++k )
+      {
+        madeBefore[half][k] = sum;
+        sum = static_cast<std::uint8_t>( sum + copiesOf[( pattern >> k ) & 1U] );
+      }
+      madeBefore[half][16] = sum;
+    }
+
+    // The colour offset and the word it is in stay in registers through the
+    // row; the word is read again only when the offset leaves it.
+    ColourOffset at = state.colour;
+    std::uint32_t wordIndex = at.words;
+    std::uint16_t word = romWord( mColours, wordIndex );
+
     for ( std::uint32_t column = 0; column < mSprite.width; ++column )
     {
       std::uint16_t bits = mask( state.maskOffset );
-      if ( mSprite.flipY )
+      if ( backwards )
       {
         bits = reverse( bits );
       }
-      for ( int pixel = 0; pixel < 16; ++pixel )
+      // Only the opaque pixels are drawn, each where the pixels before it in
+      // the word leave off.
+      std::uint32_t const pattern = xBits & 0xffffU;
+      std::array<std::uint8_t, 17> const& before = madeBefore[column & 1U];
+      std::uint32_t opaque = ~static_cast<std::uint32_t>( bits ) & 0xffffU;
+      while ( opaque != 0 )
       {
-        bool const transparent = ( bits & 1U ) != 0;
-        bool const scaleBit = ( xBits & 1U ) != 0;
-        std::uint32_t copies = 1;
-        if ( mSprite.zoomX() )
+        auto const pixel = static_cast<unsigned>( std::countr_zero( opaque ) );
+        opaque &= opaque - 1;
+        std::uint32_t const start = position + before[pixel];
+        std::uint32_t const copies = copiesOf[( pattern >> pixel ) & 1U];
+        if ( at.words != wordIndex )
         {
-          copies = scaleBit ? 2 : 1;
+          wordIndex = at.words;
+          word = romWord( mColours, wordIndex );
         }
-        else
+        auto const value = static_cast<std::uint16_t>( tag | ( ( word >> ( 5 * at.sub ) ) & 0x1fU ) );
+        for ( std::uint32_t copy = 0; copy < copies; ++copy )
         {
-          copies = scaleBit ? 0 : 1;
-        }
-        if ( !transparent )
-        {
-          auto const value = static_cast<std::uint16_t>( tag | colour( state.colour ) );
-          for ( std::uint32_t copy = 0; copy < copies; ++copy )
+          std::uint32_t const screenX = ( first + ( direction * ( start + copy ) ) ) & 0x7ffU;
+          if ( screenX < SCREEN_WIDTH )
           {
-            std::uint32_t const at =
-                mirrored ? mSprite.x + mSprite.scaledWidth - 1 - ( position + copy ) : mSprite.x + position + copy;
-            std::uint32_t const screenX = at & 0x7ffU;
-            if ( screenX < SCREEN_WIDTH )
-            {
-              line.at( screenX ) = value;
-            }
+            line[screenX] = value;
           }
-          state.colour.advance( 1, mSprite.flipY );
         }
-        position += copies;
-        bits = static_cast<std::uint16_t>( bits >> 1U );
-        xBits = std::rotr( xBits, 1 );
+        at.next( backwards );
       }
+      position += before[16];
+      xBits = std::rotr( xBits, 16 );
       ++state.maskOffset;
     }
+    state.colour = at;
 
     std::uint16_t const before = state.sourceLine;
     auto const lastLine = static_cast<std::uint16_t>( ( mSprite.height - 1 ) & 0x1ffU );
@@ -306,18 +362,30 @@ public:
   }
 
 private:
+  /// Word `index` of `rom`, its low byte first; a byte past the end is zero.
+  static std::uint16_t romWord( std::span<std::uint8_t const> rom, std::uint32_t index )
+  {
+    std::size_t const at = std::size_t{ index } * 2;
+    if ( at >= rom.size() )
+    {
+      return 0;
+    }
+    std::uint32_t const high = at + 1 < rom.size() ? rom[at + 1] : 0U;
+    return static_cast<std::uint16_t>( rom[at] | ( high << 8U ) );
+  }
+
   static std::uint16_t reverse( std::uint16_t value )
   {
-    std::uint16_t result = 0;
-    for ( unsigned bit = 0; bit < 16; ++bit )
-    {
-      result = static_cast<std::uint16_t>( ( static_cast<unsigned>( result ) << 1U ) | ( ( value >> bit ) & 1U ) );
-    }
-    return result;
+    std::uint32_t v = value;
+    v = ( ( v & 0x5555U ) << 1U ) | ( ( v >> 1U ) & 0x5555U );
+    v = ( ( v & 0x3333U ) << 2U ) | ( ( v >> 2U ) & 0x3333U );
+    v = ( ( v & 0x0f0fU ) << 4U ) | ( ( v >> 4U ) & 0x0f0fU );
+    return static_cast<std::uint16_t>( ( ( v & 0x00ffU ) << 8U ) | ( v >> 8U ) );
   }
 
   Sprite const& mSprite;
-  Sdram const& mSdram;
+  std::span<std::uint8_t const> mMasks;
+  std::span<std::uint8_t const> mColours;
 };
 
 } // namespace

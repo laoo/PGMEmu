@@ -88,7 +88,7 @@ int runScript( pgm::Settings settings, std::filesystem::path const& path, bool r
 }
 
 /// Runs `game` for `frames` frames unthrottled and prints how fast that went.
-int benchmark( pgm::Settings settings, std::string const& game, std::int64_t frames )
+int benchmark( pgm::Settings settings, std::string const& game, std::int64_t frames, std::int64_t skip )
 {
   pgm::Emulator emulator{ std::move( settings ) };
   if ( auto const loaded = emulator.loadGameByName( game ); !loaded )
@@ -98,6 +98,7 @@ int benchmark( pgm::Settings settings, std::string const& game, std::int64_t fra
   }
   pgm::machine::Machine& machine = *emulator.machine();
   machine.reset( 100 );
+  machine.runFrames( skip );
   auto const started = std::chrono::steady_clock::now();
   machine.runFrames( frames );
   double const seconds = std::chrono::duration<double>( std::chrono::steady_clock::now() - started ).count();
@@ -269,6 +270,10 @@ int run( int argc, char** argv )
   app.add_option( "--frames", frames, "With --benchmark: how many frames; a minute's worth if not given" )
       ->needs( benchmarkOption )
       ->check( CLI::PositiveNumber );
+  std::int64_t skip = 0;
+  app.add_option( "--skip", skip, "With --benchmark: frames to run before timing starts, to measure past the boot" )
+      ->needs( benchmarkOption )
+      ->check( CLI::NonNegativeNumber );
   std::filesystem::path info;
   app.add_option( "--info", info, "Describe a .pgm file and exit" )
       ->check( CLI::ExistingFile )
@@ -333,7 +338,7 @@ int run( int argc, char** argv )
   }
   if ( !benchmarked.empty() )
   {
-    return benchmark( std::move( settings ), benchmarked, frames );
+    return benchmark( std::move( settings ), benchmarked, frames, skip );
   }
 
   bool const server = serverFlag->count() > 0;
