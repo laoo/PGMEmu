@@ -21,6 +21,7 @@ option( PGM_BUILD_APP   "Build the SDL3 desktop application"       ON )
 option( PGM_WERROR      "Treat compiler warnings as errors"        OFF )
 
 include( Warnings )
+include( Optimisation )
 include( Dependencies )
 
 add_subdirectory( libextern )

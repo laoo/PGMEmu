@@ -83,7 +83,7 @@ session takes one milestone by name.
 | `src/pgm_app/` | `pgmemu`: the SDL3 + Dear ImGui desktop frontend. |
 | `tests/` | Catch2 v3 tests, linked against `pgm_core`; `control/` also holds the protocol's recorded transcripts. |
 | `libextern/` | Third-party code carried in the tree, unmodified. Not formatted, not tidied. `libextern/README.md` is the inventory. |
-| `cmake/` | `Warnings.cmake`, `Dependencies.cmake`. |
+| `cmake/` | `Warnings.cmake`, `Optimisation.cmake`, `Dependencies.cmake`. |
 | `docs/` | See `docs/README.md`; it is the index and the rulebook. |
 | `.claude/skills/pgmemu/` | The project skill an agent drives the emulator with. |
 

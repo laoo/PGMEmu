@@ -71,6 +71,7 @@ it, never "at the end of the session".
 - [0021: PGMBuilder's code is not carried into the emulator](decisions/0021-pgmbuilder-is-not-a-source-of-code.md)
 - [0022: CI builds three platforms, and a tag makes a release](decisions/0022-ci-and-releases.md)
 - [0023: Breakpoints on the Z80 and the ARM7 stop the 68000's run, not the CPU](decisions/0023-breakpoints-on-the-caught-up-cpus.md)
+- [0024: The optimised configurations are -O3 with link-time optimisation](decisions/0024-release-builds-are-o3-with-lto.md)
 
 ### Hardware
 - [Differences](hardware/differences.md): where the emulator departs from the RTL, and the RTL from the board
