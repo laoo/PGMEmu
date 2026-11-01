@@ -149,17 +149,17 @@ void Arm7::thumbShift( std::uint32_t opcode )
 {
   unsigned const rd = field( opcode, 0, 3 );
   Shifted const shifted =
-      shiftByImmediate( field( opcode, 11, 2 ), *mRegisters.at( field( opcode, 3, 3 ) ), field( opcode, 6, 5 ) );
+      shiftByImmediate( field( opcode, 11, 2 ), mReg[field( opcode, 3, 3 )], field( opcode, 6, 5 ) );
   prefetch();
-  *mRegisters.at( rd ) = alu( OP_MOV, 0, shifted, true );
+  mReg[rd] = alu( OP_MOV, 0, shifted, true );
 }
 
 void Arm7::thumbAddSubtract( std::uint32_t opcode )
 {
-  std::uint32_t const operand = bit( opcode, 10 ) ? field( opcode, 6, 3 ) : *mRegisters.at( field( opcode, 6, 3 ) );
-  std::uint32_t const first = *mRegisters.at( field( opcode, 3, 3 ) );
+  std::uint32_t const operand = bit( opcode, 10 ) ? field( opcode, 6, 3 ) : mReg[field( opcode, 6, 3 )];
+  std::uint32_t const first = mReg[field( opcode, 3, 3 )];
   prefetch();
-  *mRegisters.at( field( opcode, 0, 3 ) ) =
+  mReg[field( opcode, 0, 3 )] =
       alu( bit( opcode, 9 ) ? OP_SUB : OP_ADD, first, Shifted{ .value = operand, .carry = false }, true );
 }
 
@@ -171,16 +171,16 @@ void Arm7::thumbImmediate( std::uint32_t opcode )
   switch ( field( opcode, 11, 2 ) )
   {
   case 0:
-    *mRegisters.at( rd ) = alu( OP_MOV, 0, operand, true );
+    mReg[rd] = alu( OP_MOV, 0, operand, true );
     break;
   case 1:
-    alu( OP_CMP, *mRegisters.at( rd ), operand, true );
+    alu( OP_CMP, mReg[rd], operand, true );
     break;
   case 2:
-    *mRegisters.at( rd ) = alu( OP_ADD, *mRegisters.at( rd ), operand, true );
+    mReg[rd] = alu( OP_ADD, mReg[rd], operand, true );
     break;
   default:
-    *mRegisters.at( rd ) = alu( OP_SUB, *mRegisters.at( rd ), operand, true );
+    mReg[rd] = alu( OP_SUB, mReg[rd], operand, true );
     break;
   }
 }
@@ -188,8 +188,8 @@ void Arm7::thumbImmediate( std::uint32_t opcode )
 void Arm7::thumbAlu( std::uint32_t opcode )
 {
   unsigned const rd = field( opcode, 0, 3 );
-  std::uint32_t const source = *mRegisters.at( field( opcode, 3, 3 ) );
-  std::uint32_t& target = *mRegisters.at( rd );
+  std::uint32_t const source = mReg[field( opcode, 3, 3 )];
+  std::uint32_t& target = mReg[rd];
   bool const carry = ( mState.cpsr & FLAG_C ) != 0;
   prefetch();
   auto const shift = [&]( unsigned type )
@@ -262,8 +262,8 @@ void Arm7::thumbHighRegister( std::uint32_t opcode )
 {
   unsigned const rd = field( opcode, 0, 3 ) | ( bit( opcode, 7 ) ? 8U : 0U );
   unsigned const rs = field( opcode, 3, 3 ) | ( bit( opcode, 6 ) ? 8U : 0U );
-  std::uint32_t const source = *mRegisters.at( rs );
-  std::uint32_t const destination = *mRegisters.at( rd );
+  std::uint32_t const source = mReg[rs];
+  std::uint32_t const destination = mReg[rd];
   prefetch();
   switch ( field( opcode, 8, 2 ) )
   {
@@ -285,39 +285,39 @@ void Arm7::thumbHighRegister( std::uint32_t opcode )
 
 void Arm7::thumbPcRelativeLoad( std::uint32_t opcode )
 {
-  std::uint32_t const address = ( *mRegisters[PC] & ~2U ) + ( field( opcode, 0, 8 ) << 2U );
+  std::uint32_t const address = ( mReg[PC] & ~2U ) + ( field( opcode, 0, 8 ) << 2U );
   prefetch();
   std::uint32_t const data = readData( address, 4, 0 );
   internalCycle();
-  *mRegisters.at( field( opcode, 8, 3 ) ) = loadedWord( data, address );
+  mReg[field( opcode, 8, 3 )] = loadedWord( data, address );
 }
 
 void Arm7::thumbRegisterOffset( std::uint32_t opcode )
 {
   unsigned const rd = field( opcode, 0, 3 );
-  std::uint32_t const address = *mRegisters.at( field( opcode, 3, 3 ) ) + *mRegisters.at( field( opcode, 6, 3 ) );
+  std::uint32_t const address = mReg[field( opcode, 3, 3 )] + mReg[field( opcode, 6, 3 )];
   unsigned const size = bit( opcode, 10 ) ? 1 : 4;
   prefetch();
   if ( !bit( opcode, 11 ) )
   {
-    writeData( address, size, *mRegisters.at( rd ), 0 );
+    writeData( address, size, mReg[rd], 0 );
     return;
   }
   std::uint32_t const data = readData( address, size, 0 );
   internalCycle();
-  *mRegisters.at( rd ) = size == 1 ? loadedByte( data, false ) : loadedWord( data, address );
+  mReg[rd] = size == 1 ? loadedByte( data, false ) : loadedWord( data, address );
 }
 
 void Arm7::thumbSignedTransfer( std::uint32_t opcode )
 {
   unsigned const rd = field( opcode, 0, 3 );
-  std::uint32_t const address = *mRegisters.at( field( opcode, 3, 3 ) ) + *mRegisters.at( field( opcode, 6, 3 ) );
+  std::uint32_t const address = mReg[field( opcode, 3, 3 )] + mReg[field( opcode, 6, 3 )];
   prefetch();
   std::uint32_t value = 0;
   switch ( field( opcode, 10, 2 ) )
   {
   case 0: // STRH
-    writeData( address, 2, *mRegisters.at( rd ), 0 );
+    writeData( address, 2, mReg[rd], 0 );
     return;
   case 1: // LDSB
     value = loadedByte( readData( address, 1, 0 ), true );
@@ -330,67 +330,67 @@ void Arm7::thumbSignedTransfer( std::uint32_t opcode )
     break;
   }
   internalCycle();
-  *mRegisters.at( rd ) = value;
+  mReg[rd] = value;
 }
 
 void Arm7::thumbImmediateOffset( std::uint32_t opcode )
 {
   unsigned const rd = field( opcode, 0, 3 );
   unsigned const size = bit( opcode, 12 ) ? 1 : 4;
-  std::uint32_t const address = *mRegisters.at( field( opcode, 3, 3 ) ) + ( field( opcode, 6, 5 ) * size );
+  std::uint32_t const address = mReg[field( opcode, 3, 3 )] + ( field( opcode, 6, 5 ) * size );
   prefetch();
   if ( !bit( opcode, 11 ) )
   {
-    writeData( address, size, *mRegisters.at( rd ), 0 );
+    writeData( address, size, mReg[rd], 0 );
     return;
   }
   std::uint32_t const data = readData( address, size, 0 );
   internalCycle();
-  *mRegisters.at( rd ) = size == 1 ? loadedByte( data, false ) : loadedWord( data, address );
+  mReg[rd] = size == 1 ? loadedByte( data, false ) : loadedWord( data, address );
 }
 
 void Arm7::thumbHalfwordTransfer( std::uint32_t opcode )
 {
   unsigned const rd = field( opcode, 0, 3 );
-  std::uint32_t const address = *mRegisters.at( field( opcode, 3, 3 ) ) + ( field( opcode, 6, 5 ) << 1U );
+  std::uint32_t const address = mReg[field( opcode, 3, 3 )] + ( field( opcode, 6, 5 ) << 1U );
   prefetch();
   if ( !bit( opcode, 11 ) )
   {
-    writeData( address, 2, *mRegisters.at( rd ), 0 );
+    writeData( address, 2, mReg[rd], 0 );
     return;
   }
   std::uint32_t const data = readData( address, 2, 0 );
   internalCycle();
-  *mRegisters.at( rd ) = loadedHalfword( data, address, false );
+  mReg[rd] = loadedHalfword( data, address, false );
 }
 
 void Arm7::thumbSpRelative( std::uint32_t opcode )
 {
   unsigned const rd = field( opcode, 8, 3 );
-  std::uint32_t const address = *mRegisters[SP] + ( field( opcode, 0, 8 ) << 2U );
+  std::uint32_t const address = mReg[SP] + ( field( opcode, 0, 8 ) << 2U );
   prefetch();
   if ( !bit( opcode, 11 ) )
   {
-    writeData( address, 4, *mRegisters.at( rd ), 0 );
+    writeData( address, 4, mReg[rd], 0 );
     return;
   }
   std::uint32_t const data = readData( address, 4, 0 );
   internalCycle();
-  *mRegisters.at( rd ) = loadedWord( data, address );
+  mReg[rd] = loadedWord( data, address );
 }
 
 void Arm7::thumbLoadAddress( std::uint32_t opcode )
 {
-  std::uint32_t const base = bit( opcode, 11 ) ? *mRegisters[SP] : *mRegisters[PC] & ~2U;
+  std::uint32_t const base = bit( opcode, 11 ) ? mReg[SP] : mReg[PC] & ~2U;
   prefetch();
-  *mRegisters.at( field( opcode, 8, 3 ) ) = base + ( field( opcode, 0, 8 ) << 2U );
+  mReg[field( opcode, 8, 3 )] = base + ( field( opcode, 0, 8 ) << 2U );
 }
 
 void Arm7::thumbAdjustSp( std::uint32_t opcode )
 {
   std::uint32_t const offset = field( opcode, 0, 7 ) << 2U;
   prefetch();
-  std::uint32_t& sp = *mRegisters[SP];
+  std::uint32_t& sp = mReg[SP];
   sp = bit( opcode, 7 ) ? sp - offset : sp + offset;
 }
 
@@ -426,7 +426,7 @@ void Arm7::thumbMultiple( std::uint32_t opcode )
 
 void Arm7::thumbConditionalBranch( std::uint32_t opcode )
 {
-  std::uint32_t const target = *mRegisters[PC] + ( signExtend( field( opcode, 0, 8 ), 8 ) << 1U );
+  std::uint32_t const target = mReg[PC] + ( signExtend( field( opcode, 0, 8 ), 8 ) << 1U );
   bool const taken = conditionHolds( field( opcode, 8, 4 ) );
   prefetch();
   if ( taken )
@@ -437,7 +437,7 @@ void Arm7::thumbConditionalBranch( std::uint32_t opcode )
 
 void Arm7::thumbBranch( std::uint32_t opcode )
 {
-  std::uint32_t const target = *mRegisters[PC] + ( signExtend( field( opcode, 0, 11 ), 11 ) << 1U );
+  std::uint32_t const target = mReg[PC] + ( signExtend( field( opcode, 0, 11 ), 11 ) << 1U );
   prefetch();
   writeRegister( PC, target );
 }
@@ -448,15 +448,15 @@ void Arm7::thumbLongBranch( std::uint32_t opcode )
   if ( !bit( opcode, 11 ) )
   {
     // The first half: the high part of the offset into LR.
-    std::uint32_t const pc = *mRegisters[PC];
+    std::uint32_t const pc = mReg[PC];
     prefetch();
-    *mRegisters[LR] = pc + ( signExtend( offset, 11 ) << 12U );
+    mReg[LR] = pc + ( signExtend( offset, 11 ) << 12U );
     return;
   }
-  std::uint32_t const next = *mRegisters[PC] - 2;
-  std::uint32_t const target = ( *mRegisters[LR] + ( offset << 1U ) ) & ~1U;
+  std::uint32_t const next = mReg[PC] - 2;
+  std::uint32_t const target = ( mReg[LR] + ( offset << 1U ) ) & ~1U;
   prefetch();
-  *mRegisters[LR] = next | 1U;
+  mReg[LR] = next | 1U;
   writeRegister( PC, target );
 }
 

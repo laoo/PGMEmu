@@ -1,6 +1,7 @@
 #include "Arm7.hpp"
 
 #include <bit>
+#include <cstring>
 
 namespace pgm::cpu
 {
@@ -76,15 +77,28 @@ constexpr int spsrIndex( std::uint32_t mode )
 
 Arm7::Arm7( Arm7Bus& bus ) : mBus{ &bus }
 {
-  bindRegisters();
+  loadBank();
+}
+
+void Arm7::addCodeWindow( CodeWindow window )
+{
+  window.size &= ~3U;
+  for ( CodeWindow& slot : mWindows )
+  {
+    if ( slot.size == 0 )
+    {
+      slot = window;
+      return;
+    }
+  }
 }
 
 void Arm7::reset()
 {
   std::uint32_t const old = mState.cpsr;
   setCpsr( MODE_SUPERVISOR | DISABLE_IRQ | DISABLE_FIQ );
-  mState.spsr.at( 1 ) = old;
-  *mRegisters[PC] = VECTOR_RESET;
+  mState.spsr[1] = old;
+  mReg[PC] = VECTOR_RESET;
   refill();
 }
 
@@ -92,14 +106,14 @@ void Arm7::step()
 {
   if ( mState.fiqLine && ( mState.cpsr & DISABLE_FIQ ) == 0 )
   {
-    std::uint32_t const next = thumb() ? *mRegisters[PC] : *mRegisters[PC] - 4;
+    std::uint32_t const next = thumb() ? mReg[PC] : mReg[PC] - 4;
     prefetch();
     enterException( MODE_FIQ, VECTOR_FIQ, next );
     return;
   }
   if ( mState.irqLine && ( mState.cpsr & DISABLE_IRQ ) == 0 )
   {
-    std::uint32_t const next = thumb() ? *mRegisters[PC] : *mRegisters[PC] - 4;
+    std::uint32_t const next = thumb() ? mReg[PC] : mReg[PC] - 4;
     prefetch();
     enterException( MODE_IRQ, VECTOR_IRQ, next );
     return;
@@ -132,73 +146,95 @@ void Arm7::setIrq( bool asserted )
 
 Arm7State const& Arm7::state() const
 {
+  storeBank( mState.cpsr & MODE_MASK );
   return mState;
 }
 
 void Arm7::setState( Arm7State const& state )
 {
   mState = state;
-  bindRegisters();
+  loadBank();
 }
 
 std::uint32_t Arm7::reg( unsigned index ) const
 {
-  return *mRegisters.at( index );
+  return mReg.at( index );
 }
 
 std::uint32_t Arm7::pc() const
 {
-  return *mRegisters[PC] - ( thumb() ? 4U : 8U );
+  return mReg[PC] - ( thumb() ? 4U : 8U );
 }
 
 // ---------------------------------------------------------------------------
 // Registers and modes
 
-void Arm7::bindRegisters()
+std::uint32_t& Arm7::bankSlot( std::uint32_t mode, unsigned index ) const
+{
+  if ( index < 8 || index == PC )
+  {
+    return mState.r[index];
+  }
+  if ( mode == MODE_FIQ )
+  {
+    return mState.fiq[index - 8];
+  }
+  if ( index < SP )
+  {
+    return mState.r[index];
+  }
+  switch ( mode )
+  {
+  case MODE_SUPERVISOR:
+    return mState.svc[index - SP];
+  case MODE_ABORT:
+    return mState.abt[index - SP];
+  case MODE_IRQ:
+    return mState.irq[index - SP];
+  case MODE_UNDEFINED:
+    return mState.und[index - SP];
+  default:
+    return mState.r[index];
+  }
+}
+
+bool Arm7::userRegister( unsigned index ) const
+{
+  return &bankSlot( mState.cpsr & MODE_MASK, index ) == &mState.r[index];
+}
+
+void Arm7::loadBank()
+{
+  std::uint32_t const mode = mState.cpsr & MODE_MASK;
+  for ( unsigned i = 0; i < 16; ++i )
+  {
+    mReg[i] = bankSlot( mode, i );
+  }
+}
+
+void Arm7::storeBank( std::uint32_t mode ) const
 {
   for ( unsigned i = 0; i < 16; ++i )
   {
-    mRegisters.at( i ) = &mState.r.at( i );
-  }
-  switch ( mState.cpsr & MODE_MASK )
-  {
-  case MODE_FIQ:
-    for ( unsigned i = 8; i < 15; ++i )
-    {
-      mRegisters.at( i ) = &mState.fiq.at( i - 8 );
-    }
-    break;
-  case MODE_SUPERVISOR:
-    mRegisters[SP] = &mState.svc.front();
-    mRegisters[LR] = &mState.svc.back();
-    break;
-  case MODE_ABORT:
-    mRegisters[SP] = &mState.abt.front();
-    mRegisters[LR] = &mState.abt.back();
-    break;
-  case MODE_IRQ:
-    mRegisters[SP] = &mState.irq.front();
-    mRegisters[LR] = &mState.irq.back();
-    break;
-  case MODE_UNDEFINED:
-    mRegisters[SP] = &mState.und.front();
-    mRegisters[LR] = &mState.und.back();
-    break;
-  default:
-    break;
+    bankSlot( mode, i ) = mReg[i];
   }
 }
 
 void Arm7::setCpsr( std::uint32_t value )
 {
+  std::uint32_t const from = mState.cpsr & MODE_MASK;
   mState.cpsr = value;
-  bindRegisters();
+  if ( ( value & MODE_MASK ) != from )
+  {
+    storeBank( from );
+    loadBank();
+  }
 }
 
 std::uint32_t* Arm7::spsr()
 {
   int const index = spsrIndex( mState.cpsr & MODE_MASK );
-  return index < 0 ? nullptr : &mState.spsr.at( static_cast<std::size_t>( index ) );
+  return index < 0 ? nullptr : &mState.spsr[static_cast<std::size_t>( index )];
 }
 
 bool Arm7::thumb() const
@@ -206,13 +242,16 @@ bool Arm7::thumb() const
   return ( mState.cpsr & THUMB ) != 0;
 }
 
-bool Arm7::conditionHolds( std::uint32_t condition ) const
+namespace
 {
-  std::uint32_t const cpsr = mState.cpsr;
-  bool const n = ( cpsr & FLAG_N ) != 0;
-  bool const z = ( cpsr & FLAG_Z ) != 0;
-  bool const c = ( cpsr & FLAG_C ) != 0;
-  bool const v = ( cpsr & FLAG_V ) != 0;
+
+/// Whether `condition` holds for the flags N Z C V in `flags`' bits 3 to 0.
+constexpr bool conditionHoldsFor( unsigned condition, unsigned flags )
+{
+  bool const n = ( flags & 8U ) != 0;
+  bool const z = ( flags & 4U ) != 0;
+  bool const c = ( flags & 2U ) != 0;
+  bool const v = ( flags & 1U ) != 0;
   switch ( condition )
   {
   case 0x0:
@@ -250,6 +289,31 @@ bool Arm7::conditionHolds( std::uint32_t condition ) const
   }
 }
 
+/// For each condition, a bit per value of the flags N Z C V: set where it
+/// holds.
+constexpr std::array<std::uint16_t, 16> CONDITIONS = []
+{
+  std::array<std::uint16_t, 16> conditions{};
+  for ( unsigned condition = 0; condition < 16; ++condition )
+  {
+    for ( unsigned flags = 0; flags < 16; ++flags )
+    {
+      if ( conditionHoldsFor( condition, flags ) )
+      {
+        conditions[condition] = static_cast<std::uint16_t>( conditions[condition] | ( 1U << flags ) );
+      }
+    }
+  }
+  return conditions;
+}();
+
+} // namespace
+
+bool Arm7::conditionHolds( std::uint32_t condition ) const
+{
+  return ( ( CONDITIONS[condition] >> ( mState.cpsr >> 28U ) ) & 1U ) != 0;
+}
+
 void Arm7::setNz( std::uint32_t result )
 {
   mState.cpsr = ( mState.cpsr & ~( FLAG_N | FLAG_Z ) ) | ( result & FLAG_N ) | ( result == 0 ? FLAG_Z : 0 );
@@ -258,12 +322,29 @@ void Arm7::setNz( std::uint32_t result )
 // ---------------------------------------------------------------------------
 // The pipeline and the bus
 
+std::uint32_t Arm7::fetch( std::uint32_t address, unsigned size, unsigned access ) const
+{
+  for ( CodeWindow const& window : mWindows )
+  {
+    std::uint32_t const offset = address - window.start;
+    if ( offset < window.size )
+    {
+      // The word that holds the address, its low byte first; a Thumb fetch
+      // is its halfword, as the bus would answer it.
+      std::uint32_t word = 0;
+      std::memcpy( &word, window.bytes + ( offset & ~3U ), sizeof( word ) );
+      return size == 4 ? word : ( word >> ( ( address & 2U ) * 8 ) ) & 0xffffU;
+    }
+  }
+  return mBus->read( address, size, access );
+}
+
 void Arm7::prefetch()
 {
   unsigned const size = thumb() ? 2 : 4;
-  std::uint32_t& pc = *mRegisters[PC];
+  std::uint32_t& pc = mReg[PC];
   mState.pipeline[1] =
-      mBus->read( pc & ~( size - 1 ), size, Arm7Bus::CODE | ( mState.fetchSequential ? Arm7Bus::SEQUENTIAL : 0 ) );
+      fetch( pc & ~( size - 1 ), size, Arm7Bus::CODE | ( mState.fetchSequential ? Arm7Bus::SEQUENTIAL : 0 ) );
   ++mState.cycles;
   mState.fetchSequential = true;
   pc += size;
@@ -272,11 +353,11 @@ void Arm7::prefetch()
 void Arm7::refill()
 {
   unsigned const size = thumb() ? 2 : 4;
-  std::uint32_t& pc = *mRegisters[PC];
-  mState.pipeline[0] = mBus->read( pc & ~( size - 1 ), size, Arm7Bus::CODE );
+  std::uint32_t& pc = mReg[PC];
+  mState.pipeline[0] = fetch( pc & ~( size - 1 ), size, Arm7Bus::CODE );
   ++mState.cycles;
   pc += size;
-  mState.pipeline[1] = mBus->read( pc & ~( size - 1 ), size, Arm7Bus::CODE | Arm7Bus::SEQUENTIAL );
+  mState.pipeline[1] = fetch( pc & ~( size - 1 ), size, Arm7Bus::CODE | Arm7Bus::SEQUENTIAL );
   ++mState.cycles;
   pc += size;
   mState.fetchSequential = true;
@@ -306,7 +387,7 @@ void Arm7::writeData( std::uint32_t address, unsigned size, std::uint32_t value,
 
 void Arm7::writeRegister( unsigned index, std::uint32_t value )
 {
-  *mRegisters.at( index ) = value;
+  mReg[index] = value;
   if ( index == PC )
   {
     refill();
@@ -330,8 +411,8 @@ void Arm7::enterException( std::uint32_t mode, std::uint32_t vector, std::uint32
   }
   setCpsr( cpsr );
   *spsr() = old;
-  *mRegisters[LR] = returnAddress;
-  *mRegisters[PC] = vector;
+  mReg[LR] = returnAddress;
+  mReg[PC] = vector;
   refill();
 }
 
@@ -517,7 +598,7 @@ void Arm7::transferBlock( Block const& block )
     list = 1U << PC;
     bytes = 0x40;
   }
-  std::uint32_t const base = *mRegisters.at( block.base );
+  std::uint32_t const base = mReg[block.base];
   std::uint32_t address = 0;
   std::uint32_t final = 0;
   if ( block.up )
@@ -535,7 +616,7 @@ void Arm7::transferBlock( Block const& block )
   // returns from an exception instead.
   bool const userBank = block.userBank && !loadsPc;
   auto const target = [&]( unsigned index ) -> std::uint32_t&
-  { return userBank ? mState.r.at( index ) : *mRegisters.at( index ); };
+  { return userBank && !userRegister( index ) ? mState.r[index] : mReg[index]; };
 
   prefetch();
   if ( block.load )
@@ -564,7 +645,7 @@ void Arm7::transferBlock( Block const& block )
       }
       if ( block.alignPc )
       {
-        *mRegisters[PC] &= ~1U;
+        mReg[PC] &= ~1U;
       }
       refill();
     }
@@ -625,57 +706,132 @@ std::uint32_t Arm7::loadedByte( std::uint32_t data, bool isSigned )
 // ---------------------------------------------------------------------------
 // ARM state
 
+namespace
+{
+
+/// The kinds of ARM instruction, as executeArm() tells them apart.
+enum class ArmKind : std::uint8_t
+{
+  DATA_PROCESSING,
+  PSR_TRANSFER,
+  MULTIPLY,
+  MULTIPLY_LONG,
+  HALFWORD_TRANSFER,
+  SINGLE_DATA_TRANSFER,
+  BLOCK_DATA_TRANSFER,
+  BRANCH,
+  SOFTWARE_INTERRUPT,
+  UNDEFINED
+};
+
+/// The kind of the ARM opcodes whose bits 27 to 20 and 7 to 4 are `index`,
+/// the bits every encoding is told apart by, but for BX and the swaps, which
+/// executeArm() checks first.
+constexpr ArmKind armKind( unsigned index )
+{
+  std::uint32_t const opcode = ( ( index & 0xff0U ) << 16U ) | ( ( index & 0xfU ) << 4U );
+  if ( ( opcode & 0x0fc000f0U ) == 0x00000090U )
+  {
+    return ArmKind::MULTIPLY;
+  }
+  if ( ( opcode & 0x0f8000f0U ) == 0x00800090U )
+  {
+    return ArmKind::MULTIPLY_LONG;
+  }
+  if ( ( opcode & 0x0e000090U ) == 0x00000090U && ( opcode & 0x60U ) != 0 )
+  {
+    return ArmKind::HALFWORD_TRANSFER;
+  }
+  if ( ( opcode & 0x0d900000U ) == 0x01000000U )
+  {
+    return ArmKind::PSR_TRANSFER;
+  }
+  if ( ( opcode & 0x0c000000U ) == 0 )
+  {
+    return ArmKind::DATA_PROCESSING;
+  }
+  if ( ( opcode & 0x0c000000U ) == 0x04000000U && ( opcode & 0x02000010U ) != 0x02000010U )
+  {
+    return ArmKind::SINGLE_DATA_TRANSFER;
+  }
+  if ( ( opcode & 0x0e000000U ) == 0x08000000U )
+  {
+    return ArmKind::BLOCK_DATA_TRANSFER;
+  }
+  if ( ( opcode & 0x0e000000U ) == 0x0a000000U )
+  {
+    return ArmKind::BRANCH;
+  }
+  if ( ( opcode & 0x0f000000U ) == 0x0f000000U )
+  {
+    return ArmKind::SOFTWARE_INTERRUPT;
+  }
+  // The undefined encodings among LDR's and STR's, and a coprocessor's:
+  // there is none.
+  return ArmKind::UNDEFINED;
+}
+
+/// A byte an entry, so that the table stays in the cache beside the rest of
+/// the machine: with a pointer an entry it was 64 KB, and the ARM, run a few
+/// thousand instructions at a time between the other chips, paid for it.
+constexpr std::array<ArmKind, 4096> ARM_KINDS = []
+{
+  std::array<ArmKind, 4096> kinds{};
+  for ( unsigned index = 0; index < kinds.size(); ++index )
+  {
+    kinds[index] = armKind( index );
+  }
+  return kinds;
+}();
+
+} // namespace
+
 void Arm7::executeArm( std::uint32_t opcode )
 {
+  // BX and the swaps share their table entries with MSR: they are told apart
+  // by bits the table does not index.
   if ( ( opcode & 0x0ffffff0U ) == 0x012fff10U )
   {
     branchExchange( opcode );
+    return;
   }
-  else if ( ( opcode & 0x0fb00ff0U ) == 0x01000090U )
+  if ( ( opcode & 0x0fb00ff0U ) == 0x01000090U )
   {
     singleDataSwap( opcode );
+    return;
   }
-  else if ( ( opcode & 0x0fc000f0U ) == 0x00000090U )
+  switch ( ARM_KINDS[( ( opcode >> 16U ) & 0xff0U ) | ( ( opcode >> 4U ) & 0xfU )] )
   {
-    multiply( opcode );
-  }
-  else if ( ( opcode & 0x0f8000f0U ) == 0x00800090U )
-  {
-    multiplyLong( opcode );
-  }
-  else if ( ( opcode & 0x0e000090U ) == 0x00000090U && ( opcode & 0x60U ) != 0 )
-  {
-    halfwordTransfer( opcode );
-  }
-  else if ( ( opcode & 0x0d900000U ) == 0x01000000U )
-  {
-    psrTransfer( opcode );
-  }
-  else if ( ( opcode & 0x0c000000U ) == 0 )
-  {
+  case ArmKind::DATA_PROCESSING:
     dataProcessing( opcode );
-  }
-  else if ( ( opcode & 0x0c000000U ) == 0x04000000U && ( opcode & 0x02000010U ) != 0x02000010U )
-  {
+    return;
+  case ArmKind::PSR_TRANSFER:
+    psrTransfer( opcode );
+    return;
+  case ArmKind::MULTIPLY:
+    multiply( opcode );
+    return;
+  case ArmKind::MULTIPLY_LONG:
+    multiplyLong( opcode );
+    return;
+  case ArmKind::HALFWORD_TRANSFER:
+    halfwordTransfer( opcode );
+    return;
+  case ArmKind::SINGLE_DATA_TRANSFER:
     singleDataTransfer( opcode );
-  }
-  else if ( ( opcode & 0x0e000000U ) == 0x08000000U )
-  {
+    return;
+  case ArmKind::BLOCK_DATA_TRANSFER:
     blockDataTransfer( opcode );
-  }
-  else if ( ( opcode & 0x0e000000U ) == 0x0a000000U )
-  {
+    return;
+  case ArmKind::BRANCH:
     branch( opcode );
-  }
-  else if ( ( opcode & 0x0f000000U ) == 0x0f000000U )
-  {
+    return;
+  case ArmKind::SOFTWARE_INTERRUPT:
     softwareInterrupt();
-  }
-  else
-  {
-    // The undefined encodings among LDR's and STR's, and a coprocessor's:
-    // there is none.
+    return;
+  case ArmKind::UNDEFINED:
     undefined();
+    return;
   }
 }
 
@@ -693,24 +849,24 @@ void Arm7::dataProcessing( std::uint32_t opcode )
     unsigned const rotate = field( opcode, 8, 4 ) * 2;
     std::uint32_t const value = std::rotr( field( opcode, 0, 8 ), static_cast<int>( rotate ) );
     operand = { .value = value, .carry = rotate == 0 ? ( mState.cpsr & FLAG_C ) != 0 : bit( value, 31 ) };
-    first = *mRegisters.at( rn );
+    first = mReg[rn];
     prefetch();
   }
   else if ( !bit( opcode, 4 ) )
   {
-    operand = shiftByImmediate( field( opcode, 5, 2 ), *mRegisters.at( field( opcode, 0, 4 ) ), field( opcode, 7, 5 ) );
-    first = *mRegisters.at( rn );
+    operand = shiftByImmediate( field( opcode, 5, 2 ), mReg[field( opcode, 0, 4 )], field( opcode, 7, 5 ) );
+    first = mReg[rn];
     prefetch();
   }
   else
   {
     // The shift amount is read with the fetch, R15 8 ahead; the operands in
     // a cycle of their own after it, R15 12 ahead.
-    unsigned const amount = *mRegisters.at( field( opcode, 8, 4 ) ) & 0xffU;
+    unsigned const amount = mReg[field( opcode, 8, 4 )] & 0xffU;
     prefetch();
     internalCycle();
-    operand = shiftByRegister( field( opcode, 5, 2 ), *mRegisters.at( field( opcode, 0, 4 ) ), amount );
-    first = *mRegisters.at( rn );
+    operand = shiftByRegister( field( opcode, 5, 2 ), mReg[field( opcode, 0, 4 )], amount );
+    first = mReg[rn];
   }
 
   bool const compare = operation >= OP_TST && operation <= OP_CMN;
@@ -739,7 +895,7 @@ void Arm7::psrTransfer( std::uint32_t opcode )
     std::uint32_t const value = saved != nullptr ? *saved : mState.cpsr;
     unsigned const rd = field( opcode, 12, 4 );
     prefetch();
-    *mRegisters.at( rd ) = rd == PC ? value + 4 : value;
+    mReg[rd] = rd == PC ? value + 4 : value;
     return;
   }
 
@@ -751,7 +907,7 @@ void Arm7::psrTransfer( std::uint32_t opcode )
   }
   else
   {
-    value = *mRegisters.at( field( opcode, 0, 4 ) );
+    value = mReg[field( opcode, 0, 4 )];
   }
   prefetch();
   std::uint32_t mask = 0;
@@ -784,11 +940,11 @@ void Arm7::multiply( std::uint32_t opcode )
   unsigned const rd = field( opcode, 16, 4 );
   // The operands are read after the fetch: R15 reads 12 ahead.
   prefetch();
-  std::uint32_t const multiplier = *mRegisters.at( field( opcode, 8, 4 ) );
-  std::uint32_t result = *mRegisters.at( field( opcode, 0, 4 ) ) * multiplier;
+  std::uint32_t const multiplier = mReg[field( opcode, 8, 4 )];
+  std::uint32_t result = mReg[field( opcode, 0, 4 )] * multiplier;
   if ( accumulate )
   {
-    result += *mRegisters.at( field( opcode, 12, 4 ) );
+    result += mReg[field( opcode, 12, 4 )];
   }
   int const cycles = multiplyCycles( multiplier, true ) + ( accumulate ? 1 : 0 );
   for ( int i = 0; i < cycles; ++i )
@@ -809,8 +965,8 @@ void Arm7::multiplyLong( std::uint32_t opcode )
   unsigned const high = field( opcode, 16, 4 );
   unsigned const low = field( opcode, 12, 4 );
   prefetch();
-  std::uint32_t const multiplier = *mRegisters.at( field( opcode, 8, 4 ) );
-  std::uint32_t const multiplicand = *mRegisters.at( field( opcode, 0, 4 ) );
+  std::uint32_t const multiplier = mReg[field( opcode, 8, 4 )];
+  std::uint32_t const multiplicand = mReg[field( opcode, 0, 4 )];
   std::uint64_t result = 0;
   if ( isSigned )
   {
@@ -823,7 +979,7 @@ void Arm7::multiplyLong( std::uint32_t opcode )
   }
   if ( accumulate )
   {
-    result += ( std::uint64_t{ *mRegisters.at( high ) } << 32U ) | *mRegisters.at( low );
+    result += ( std::uint64_t{ mReg[high] } << 32U ) | mReg[low];
   }
   int const cycles = multiplyCycles( multiplier, isSigned ) + ( accumulate ? 2 : 1 );
   for ( int i = 0; i < cycles; ++i )
@@ -836,8 +992,8 @@ void Arm7::multiplyLong( std::uint32_t opcode )
                   ( result == 0 ? FLAG_Z : 0 );
   }
   // Both halves are written before R15 is, if either is it, refilled from.
-  *mRegisters.at( low ) = static_cast<std::uint32_t>( result );
-  *mRegisters.at( high ) = static_cast<std::uint32_t>( result >> 32U );
+  mReg[low] = static_cast<std::uint32_t>( result );
+  mReg[high] = static_cast<std::uint32_t>( result >> 32U );
   if ( low == PC || high == PC )
   {
     refill();
@@ -848,8 +1004,8 @@ void Arm7::singleDataSwap( std::uint32_t opcode )
 {
   unsigned const size = bit( opcode, 22 ) ? 1 : 4;
   prefetch();
-  std::uint32_t const address = *mRegisters.at( field( opcode, 16, 4 ) );
-  std::uint32_t const source = *mRegisters.at( field( opcode, 0, 4 ) );
+  std::uint32_t const address = mReg[field( opcode, 16, 4 )];
+  std::uint32_t const source = mReg[field( opcode, 0, 4 )];
   std::uint32_t const data = readData( address, size, 0 );
   writeData( address, size, source, Arm7Bus::LOCK );
   internalCycle();
@@ -858,7 +1014,7 @@ void Arm7::singleDataSwap( std::uint32_t opcode )
 
 void Arm7::branchExchange( std::uint32_t opcode )
 {
-  std::uint32_t const target = *mRegisters.at( field( opcode, 0, 4 ) );
+  std::uint32_t const target = mReg[field( opcode, 0, 4 )];
   prefetch();
   setCpsr( ( mState.cpsr & ~THUMB ) | ( bit( target, 0 ) ? THUMB : 0 ) );
   writeRegister( PC, target & ~1U );
@@ -874,16 +1030,16 @@ void Arm7::halfwordTransfer( std::uint32_t opcode )
   unsigned const rd = field( opcode, 12, 4 );
   unsigned const kind = field( opcode, 5, 2 ); // 1 H, 2 SB, 3 SH
 
-  std::uint32_t const offset = bit( opcode, 22 ) ? ( field( opcode, 8, 4 ) << 4U ) | field( opcode, 0, 4 )
-                                                 : *mRegisters.at( field( opcode, 0, 4 ) );
-  std::uint32_t const base = *mRegisters.at( rn );
+  std::uint32_t const offset =
+      bit( opcode, 22 ) ? ( field( opcode, 8, 4 ) << 4U ) | field( opcode, 0, 4 ) : mReg[field( opcode, 0, 4 )];
+  std::uint32_t const base = mReg[rn];
   std::uint32_t const moved = up ? base + offset : base - offset;
   std::uint32_t const address = preIndex ? moved : base;
   prefetch();
 
   if ( !load )
   {
-    writeData( address, 2, *mRegisters.at( rd ), 0 );
+    writeData( address, 2, mReg[rd], 0 );
     if ( writeBack )
     {
       writeBase( rn, moved );
@@ -920,17 +1076,16 @@ void Arm7::singleDataTransfer( std::uint32_t opcode )
   std::uint32_t offset = field( opcode, 0, 12 );
   if ( bit( opcode, 25 ) )
   {
-    offset =
-        shiftByImmediate( field( opcode, 5, 2 ), *mRegisters.at( field( opcode, 0, 4 ) ), field( opcode, 7, 5 ) ).value;
+    offset = shiftByImmediate( field( opcode, 5, 2 ), mReg[field( opcode, 0, 4 )], field( opcode, 7, 5 ) ).value;
   }
-  std::uint32_t const base = *mRegisters.at( rn );
+  std::uint32_t const base = mReg[rn];
   std::uint32_t const moved = up ? base + offset : base - offset;
   std::uint32_t const address = preIndex ? moved : base;
   prefetch();
 
   if ( !load )
   {
-    writeData( address, size, *mRegisters.at( rd ), 0 );
+    writeData( address, size, mReg[rd], 0 );
     if ( writeBack )
     {
       writeBase( rn, moved );
@@ -961,26 +1116,26 @@ void Arm7::blockDataTransfer( std::uint32_t opcode )
 
 void Arm7::branch( std::uint32_t opcode )
 {
-  std::uint32_t const pc = *mRegisters[PC];
+  std::uint32_t const pc = mReg[PC];
   std::uint32_t const target = pc + ( signExtend( field( opcode, 0, 24 ), 24 ) << 2U );
   prefetch();
   if ( bit( opcode, 24 ) )
   {
-    *mRegisters[LR] = pc - 4;
+    mReg[LR] = pc - 4;
   }
   writeRegister( PC, target );
 }
 
 void Arm7::undefined()
 {
-  std::uint32_t const next = *mRegisters[PC] - ( thumb() ? 2U : 4U );
+  std::uint32_t const next = mReg[PC] - ( thumb() ? 2U : 4U );
   prefetch();
   enterException( MODE_UNDEFINED, VECTOR_UNDEFINED, next );
 }
 
 void Arm7::softwareInterrupt()
 {
-  std::uint32_t const next = *mRegisters[PC] - ( thumb() ? 2U : 4U );
+  std::uint32_t const next = mReg[PC] - ( thumb() ? 2U : 4U );
   prefetch();
   enterException( MODE_SUPERVISOR, VECTOR_SWI, next );
 }

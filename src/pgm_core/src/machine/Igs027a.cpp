@@ -21,6 +21,9 @@ constexpr std::uint32_t TYPE3_LATCH = 0x48000000;
 constexpr std::uint32_t TYPE3_SHARE = 0x38000000;
 constexpr std::uint32_t TYPE3_BANK = 0x40000018;
 constexpr std::uint32_t XOR_TABLE = 0x50000000;
+/// The external ROM, repeated every 8 MB through 0x08xxxxxx.
+constexpr std::uint32_t EXTERNAL_ROM_AT = 0x08000000;
+constexpr std::uint32_t EXTERNAL_ROM_MIRROR = 0x800000;
 /// The vector fetch that takes type 3's FIQ down.
 constexpr std::uint32_t FIQ_VECTOR = 0x1c;
 
@@ -63,6 +66,18 @@ Igs027a::Igs027a( Igs027aBoard board, std::vector<std::uint8_t> internalRom, std
       mShared( board.type == Igs027aBoard::Type::TYPE3 ? 2 * SHARE_WORDS : SHARE_WORDS )
 {
   mInternalRom.resize( INTERNAL_ROM_END );
+  // The ARM fetches its code straight from the ROMs. The vectors stay on the
+  // bus: type 3's FIQ vector, fetched, takes its FIQ down (readWord()).
+  constexpr std::uint32_t vectorsEnd = FIQ_VECTOR + 4;
+  mArm.addCodeWindow( cpu::CodeWindow{
+      .start = vectorsEnd, .size = INTERNAL_ROM_END - vectorsEnd, .bytes = mInternalRom.data() + vectorsEnd } );
+  if ( mBoard.type != Igs027aBoard::Type::TYPE1 )
+  {
+    mArm.addCodeWindow( cpu::CodeWindow{
+        .start = EXTERNAL_ROM_AT,
+        .size = static_cast<std::uint32_t>( std::min<std::size_t>( mExternalRom.size(), EXTERNAL_ROM_MIRROR ) ),
+        .bytes = mExternalRom.data() } );
+  }
 }
 
 std::vector<std::uint8_t> Igs027a::pages() const
@@ -284,10 +299,19 @@ void Igs027a::serializeState( Archive& archive )
 
 std::uint32_t Igs027a::read( std::uint32_t address, unsigned size, unsigned /*access*/ )
 {
-  // Most reads are the ROMs', which nothing happens to: they go straight
-  // there, but for type 3's FIQ vector.
+  // The core fetches its code through its windows, so what comes here is
+  // data: the internal RAM's mostly, then the ROMs', which nothing happens
+  // to, but for type 3's FIQ vector. They go straight there.
   std::uint32_t word = 0;
-  if ( address < INTERNAL_ROM_END && ( mBoard.type != Igs027aBoard::Type::TYPE3 || ( address & ~3U ) != FIQ_VECTOR ) )
+  std::uint32_t const top = address >> 24U;
+  if ( top == 0x10 || top == 0x18 )
+  {
+    bool second = false;
+    std::size_t const index = internalRamIndex( address, second );
+    word = second ? mRam2[index] : mRam[index];
+  }
+  else if ( address < INTERNAL_ROM_END &&
+            ( mBoard.type != Igs027aBoard::Type::TYPE3 || ( address & ~3U ) != FIQ_VECTOR ) )
   {
     word = internalRomWord( address );
   }
@@ -309,7 +333,19 @@ std::uint32_t Igs027a::read( std::uint32_t address, unsigned size, unsigned /*ac
 
 void Igs027a::write( std::uint32_t address, unsigned size, std::uint32_t value, unsigned /*access*/ )
 {
-  writeWord( address, replicate( value, size ), laneMask( address, size ) );
+  std::uint32_t const mask = laneMask( address, size );
+  std::uint32_t const lanes = replicate( value, size );
+  std::uint32_t const top = address >> 24U;
+  if ( top == 0x10 || top == 0x18 )
+  {
+    // The internal RAM, straight, as read() takes it.
+    bool second = false;
+    std::size_t const index = internalRamIndex( address, second );
+    std::uint32_t& word = second ? mRam2[index] : mRam[index];
+    word = ( word & ~mask ) | ( lanes & mask );
+    return;
+  }
+  writeWord( address, lanes, mask );
 }
 
 std::uint32_t Igs027a::readWord( std::uint32_t address )
@@ -350,7 +386,7 @@ std::uint32_t Igs027a::externalRomWord( std::uint32_t address ) const
 {
   // The image holds the external ROM decrypted whole, the RTL's XOR of each
   // read by the table at 0x50000000 included (docs/decisions/0014).
-  std::size_t const at = address & 0x7ffffcU;
+  std::size_t const at = address & ( EXTERNAL_ROM_MIRROR - 1 ) & ~3U;
   if ( at + 4 > mExternalRom.size() )
   {
     return 0;

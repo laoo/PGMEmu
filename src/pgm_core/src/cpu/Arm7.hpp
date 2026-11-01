@@ -41,6 +41,16 @@ protected:
   Arm7Bus& operator=( Arm7Bus&& ) = default;
 };
 
+/// Memory the core fetches opcodes from without the bus: a ROM, whose reads
+/// do nothing that the bus would have to see. `bytes` holds `size` bytes, a
+/// multiple of four, and outlives the core.
+struct CodeWindow
+{
+  std::uint32_t start{};
+  std::uint32_t size{};
+  std::uint8_t const* bytes{};
+};
+
 /// Everything the core holds, as a save state takes it.
 struct Arm7State
 {
@@ -91,6 +101,11 @@ public:
 
   explicit Arm7( Arm7Bus& bus );
 
+  /// Lets opcode fetches within `window` skip the bus. Up to two windows; a
+  /// fetch outside them all goes to the bus as before. Data accesses never
+  /// use them.
+  void addCodeWindow( CodeWindow window );
+
   /// The reset: supervisor mode, ARM state, both interrupts disabled, and
   /// the pipeline filled from address 0.
   void reset();
@@ -118,7 +133,14 @@ public:
 
 private:
   // Registers and modes.
-  void bindRegisters();
+  /// The slot of `mState` that holds register `index` of `mode`.
+  [[nodiscard]] std::uint32_t& bankSlot( std::uint32_t mode, unsigned index ) const;
+  /// Whether register `index` of the current mode is the user bank's.
+  [[nodiscard]] bool userRegister( unsigned index ) const;
+  /// Loads mReg from mState's banks of the current mode, and stores it back
+  /// into `mode`'s.
+  void loadBank();
+  void storeBank( std::uint32_t mode ) const;
   void setCpsr( std::uint32_t value );
   /// The SPSR of the current mode, or null in user and system modes.
   [[nodiscard]] std::uint32_t* spsr();
@@ -127,6 +149,8 @@ private:
   void setNz( std::uint32_t result );
 
   // The pipeline and the bus.
+  /// An opcode fetch: from a code window that holds `address`, or the bus.
+  [[nodiscard]] std::uint32_t fetch( std::uint32_t address, unsigned size, unsigned access ) const;
   /// The fetch made in an instruction's first cycle: the next opcode into the
   /// pipeline, R15 on to the one after.
   void prefetch();
@@ -216,9 +240,14 @@ private:
   [[nodiscard]] static std::uint32_t loadedWord( std::uint32_t data, std::uint32_t address );
 
   Arm7Bus* mBus;
-  Arm7State mState;
-  /// Each register as the current mode sees it.
-  std::array<std::uint32_t*, 16> mRegisters{};
+  /// The canonical state. The banks of the current mode are stale while mReg
+  /// holds them; storeBank() brings them up to date, and state() does.
+  mutable Arm7State mState;
+  /// R0 to R15 as the current mode sees them: the registers the core works
+  /// on, copied in and out of mState's banks when the mode changes.
+  std::array<std::uint32_t, 16> mReg{};
+  /// Where fetches skip the bus; a window of no size is unused.
+  std::array<CodeWindow, 2> mWindows{};
 };
 
 } // namespace pgm::cpu

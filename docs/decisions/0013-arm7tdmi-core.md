@@ -50,3 +50,11 @@ every access and internal cycle counted as the manual counts them, one clock eac
   waits are not modelled.
 - The known disagreements are counted per file in `tests/cpu/Arm7SingleStepTest.cpp`; a change
   that moves any of them fails the suite.
+- The core fetches its opcodes from code windows the IGS027A gives it, its ROMs, without the
+  bus; the vectors stay on the bus, since type 3's FIQ vector fetch takes its FIQ down. Data
+  accesses always go through the bus. The decode is a table of a byte an entry and the
+  registers of the current mode are a copy, swapped when the mode changes. Measured on
+  2026-11-01 (`scripts/benchmark.sh`), the ARM games gained seven to twenty-five percent in
+  frames a second, killbldp and svg the most. The ARM runs a few thousand instructions at a
+  time between the other chips and starts cold each time, so what it touches has to be small:
+  a table of pointers, 64 KB, gave back everything the rest had gained.
