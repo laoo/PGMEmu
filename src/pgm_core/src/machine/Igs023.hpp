@@ -127,6 +127,7 @@ public:
     archive( mZoomTable );
     archive( mVram );
     archive( mPalette );
+    mRgbaStale = true;
     archive( mIrq6 );
     archive( mIrq4 );
     archive( mIrq4Count );
@@ -194,6 +195,11 @@ private:
   std::array<std::uint16_t, 32> mZoomTable{};
   std::array<std::uint8_t, VRAM_SIZE> mVram{};
   std::array<std::uint8_t, PALETTE_SIZE> mPalette{};
+  /// Each palette word as the RGBA the mixer writes, kept as the palette is
+  /// written; stale after the debugger has had the palette, until a line is
+  /// drawn.
+  std::array<std::array<std::uint8_t, 4>, PALETTE_SIZE / 2> mRgba{};
+  bool mRgbaStale{ true };
   bool mIrq6{};
   bool mIrq4{};
   std::uint8_t mIrq4Count{};

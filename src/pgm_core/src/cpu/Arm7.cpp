@@ -1,7 +1,6 @@
 #include "Arm7.hpp"
 
 #include <bit>
-#include <cstring>
 
 namespace pgm::cpu
 {
@@ -331,8 +330,10 @@ std::uint32_t Arm7::fetch( std::uint32_t address, unsigned size, unsigned access
     {
       // The word that holds the address, its low byte first; a Thumb fetch
       // is its halfword, as the bus would answer it.
-      std::uint32_t word = 0;
-      std::memcpy( &word, window.bytes + ( offset & ~3U ), sizeof( word ) );
+      std::uint8_t const* const bytes = window.bytes + ( offset & ~3U );
+      std::uint32_t const word =
+          static_cast<std::uint32_t>( bytes[0] ) | ( static_cast<std::uint32_t>( bytes[1] ) << 8U ) |
+          ( static_cast<std::uint32_t>( bytes[2] ) << 16U ) | ( static_cast<std::uint32_t>( bytes[3] ) << 24U );
       return size == 4 ? word : ( word >> ( ( address & 2U ) * 8 ) ) & 0xffffU;
     }
   }

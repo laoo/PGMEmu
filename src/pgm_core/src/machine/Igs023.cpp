@@ -1,6 +1,7 @@
 #include "Igs023.hpp"
 
 #include <algorithm>
+#include <cstring>
 
 #include <array>
 
@@ -281,7 +282,17 @@ std::uint32_t Igs023::tileRom( std::uint32_t address ) const
   address &= 0xffffffU;
   if ( mTiles.cartridge && address >= mTiles.tileBase )
   {
-    return mSdram.longWord( Sdram::CART_TILES_AT + ( address - mTiles.tileBase ) );
+    // The cartridge's tiles fill their 16 MB of SDRAM from the start, and
+    // past the ROM there is nothing: straight from the ROM, zero beyond.
+    std::size_t const at = address - mTiles.tileBase;
+    std::span<std::uint8_t const> const tiles = mSdram.cartTiles;
+    if ( at + 4 <= tiles.size() )
+    {
+      return static_cast<std::uint32_t>( tiles[at] ) | ( static_cast<std::uint32_t>( tiles[at + 1] ) << 8U ) |
+             ( static_cast<std::uint32_t>( tiles[at + 2] ) << 16U ) |
+             ( static_cast<std::uint32_t>( tiles[at + 3] ) << 24U );
+    }
+    return mSdram.longWord( Sdram::CART_TILES_AT + static_cast<std::uint32_t>( at ) );
   }
   return mSdram.longWord( Sdram::BIOS_TILES_AT + address );
 }
@@ -421,6 +432,14 @@ void Igs023::drawBackground( int line, std::array<std::uint16_t, WIDTH>& out ) c
 
 void Igs023::drawLine( int line )
 {
+  if ( mRgbaStale )
+  {
+    for ( std::size_t entry = 0; entry < mRgba.size(); ++entry )
+    {
+      mRgba[entry] = colour( static_cast<std::uint32_t>( entry ) );
+    }
+    mRgbaStale = false;
+  }
   // The flags register turns layers off. The background's pixels are still
   // fetched with it off, as the mixer may show them below.
   std::uint16_t const flags = controlFlags();
@@ -476,10 +495,8 @@ void Igs023::drawLine( int line )
       word = background[i] == NONE ? BACKDROP : background[i];
     }
 
-    for ( std::uint8_t const channel : colour( word ) )
-    {
-      mBuilding[at++] = channel;
-    }
+    std::memcpy( &mBuilding[at], mRgba[word & 0xfffU].data(), 4 );
+    at += 4;
   }
 }
 
@@ -699,6 +716,7 @@ void Igs023::write( Time now, std::uint32_t address, std::uint16_t value, bool u
     {
       mPalette[at + 1] = static_cast<std::uint8_t>( value );
     }
+    mRgba[at / 2] = colour( static_cast<std::uint32_t>( at / 2 ) );
     return;
   }
   case 3:
@@ -868,6 +886,7 @@ std::span<std::uint8_t> Igs023::vramForDebugger()
 
 std::span<std::uint8_t> Igs023::paletteForDebugger()
 {
+  mRgbaStale = true;
   return mPalette;
 }
 
