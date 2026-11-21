@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PGMEmu</title>
+  <meta name="description" content="An emulator of the IGS PolyGame Master arcade board, in the browser">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="main.js"></script>
+</head>
+<body>
+  <header class="toolbar">
+    <span class="brand">PGMEmu</span>
+    <label class="button primary">
+      Open game
+      <input id="open" type="file" accept=".pgm" hidden>
+    </label>
+    <select id="kept" aria-label="Games kept in this browser">
+      <option value="">Kept games</option>
+    </select>
+    <label class="button">
+      BIOS
+      <input id="bios" type="file" accept=".zip,.u20,.rom" multiple hidden>
+    </label>
+    <select id="region" aria-label="Region" disabled>
+      <option value="">Region</option>
+    </select>
+    <span class="spacer"></span>
+    <button id="pause" type="button" disabled>Pause</button>
+    <button id="reset" type="button" disabled>Reset</button>
+    <button id="save-state" type="button" disabled>Save state</button>
+    <button id="load-state" type="button" disabled>Load state</button>
+    <a class="source" href="https://github.com/laoo/PGMEmu">Source</a>
+  </header>
+
+  <main>
+    <section id="stage" class="stage">
+      <canvas id="screen" width="448" height="224" aria-label="The board's picture"></canvas>
+      <div id="welcome" class="welcome">
+        <p>Open the BIOS, MAME's <code>pgm.zip</code>, and a game's <code>.pgm</code> image, or drop them here.</p>
+        <p class="quiet"><a href="https://github.com/laoo/PGMBuilder">PGMBuilder</a> makes an image from a MAME set. No ROM comes with this page, and everything it is given stays in this browser.</p>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <p id="message" class="message" role="status" hidden></p>
+
+      <section>
+        <h2>Status</h2>
+        <dl id="status" class="facts"></dl>
+      </section>
+
+      <details open>
+        <summary>Display and sound</summary>
+        <label class="row"><input id="upright" type="checkbox"> Turn vertical games upright</label>
+        <label class="row"><input id="whole" type="checkbox"> Whole multiples only</label>
+        <label class="row">Volume <input id="volume" type="range" min="0" max="1" step="0.05"></label>
+        <p class="quiet">Sound starts at the first click or key.</p>
+      </details>
+
+      <details>
+        <summary>Keys</summary>
+        <p class="quiet">Click a key to bind another; Escape keeps it.</p>
+        <table class="keys">
+          <thead><tr><th>Control</th><th>Player 1</th><th>Player 2</th></tr></thead>
+          <tbody id="keys"></tbody>
+        </table>
+        <button id="reset-keys" type="button">Back to the defaults</button>
+        <p class="quiet">A gamepad is the player's it was connected as, first to fourth: its pad or left stick, its four face buttons, Start, and Back for a coin.</p>
+        <p id="gamepads" class="quiet"></p>
+      </details>
+
+      <details>
+        <summary>Kept in this browser</summary>
+        <label class="row"><input id="keep-ram" type="checkbox"> Keep each game's battery-backed RAM</label>
+        <ul id="files" class="files"></ul>
+      </details>
+
+      <details>
+        <summary>Control protocol</summary>
+        <p class="quiet">A request, as one line of JSON; the methods are those of
+          <a href="https://github.com/laoo/PGMEmu/blob/main/docs/spec/control-protocol.md">the control protocol</a>.
+          A file it names is in this page's file system:
+          <code>/pgmemu/bios</code>, <code>/pgmemu/saves</code>, <code>/pgmemu/states</code>.</p>
+        <textarea id="request" rows="3" spellcheck="false">{"id":1,"method":"cpu.get_state"}</textarea>
+        <button id="send" type="button">Send</button>
+        <pre id="answer" class="answer"></pre>
+      </details>
+    </aside>
+  </main>
+</body>
+</html>
