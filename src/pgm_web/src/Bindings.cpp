@@ -22,9 +22,13 @@
 namespace
 {
 
-/// The emulator a page drives. The BIOS is looked for in /bios until
+/// The emulator a page drives. The BIOS is looked for in /pgmemu/bios until
 /// `emu.set_bios` names its sources, and save states named without a
-/// directory are kept in /states; the page may mount both on IndexedDB.
+/// directory are kept in /pgmemu/states; the page may mount both on
+/// IndexedDB. They are under a directory of the emulator's own because IDBFS
+/// names a directory's database by its path, and a browser gives one set of
+/// databases to every page of an origin
+/// (docs/decisions/0028-the-page-names-its-storage-after-itself.md).
 class WebEmulator
 {
 public:
@@ -140,9 +144,9 @@ private:
   static pgm::Settings settings()
   {
     pgm::Settings settings;
-    settings.biosSources = { "/bios" };
-    settings.romDirectory = "/roms";
-    settings.stateDirectory = "/states";
+    settings.biosSources = { "/pgmemu/bios" };
+    settings.romDirectory = "/pgmemu/roms";
+    settings.stateDirectory = "/pgmemu/states";
     return settings;
   }
 

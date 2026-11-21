@@ -20,11 +20,16 @@ const SHAPE = 4 / 3;
 const MAX_PRESCALE = 6;
 
 // The directories kept in IndexedDB: the BIOS, each game's battery-backed
-// RAM, and the save states. An image is written to /roms only while it loads.
-const BIOS = "/bios";
-const ROMS = "/roms";
-const SAVES = "/saves";
-const STATES = "/states";
+// RAM, and the save states. An image is written to ROMS only while it loads.
+// They are under a directory named after the page, as IDBFS names a
+// directory's database by its path, and every page of one origin, each
+// project's on laoo.github.io, shares that origin's databases
+// (docs/decisions/0028-the-page-names-its-storage-after-itself.md).
+const ROOT = "/pgmemu";
+const BIOS = `${ ROOT }/bios`;
+const ROMS = `${ ROOT }/roms`;
+const SAVES = `${ ROOT }/saves`;
+const STATES = `${ ROOT }/states`;
 const KEPT = [ BIOS, SAVES, STATES ];
 // The motherboard's ROMs, as MAME's `pgm` set names them.
 const BIOS_FILES = [ "pgm_p02s.u20", "pgm_t01s.rom", "pgm_m01s.rom" ];
@@ -75,6 +80,7 @@ const module = await createPgmEmu();
 const { FS, IDBFS } = module;
 const WIDTH = module.SCREEN_WIDTH;
 const HEIGHT = module.SCREEN_HEIGHT;
+FS.mkdir( ROOT );
 FS.mkdir( ROMS );
 for ( const directory of KEPT )
 {
@@ -354,7 +360,7 @@ function restoreRam()
   }
 }
 
-// Writes the running game's RAM into /saves.
+// Writes the running game's RAM into SAVES.
 function writeRam()
 {
   if ( game && settings.keepRam )
@@ -391,7 +397,7 @@ function safeName( name )
   return name.replace( /[/\\]/g, "_" ) || "game.pgm";
 }
 
-// Where the BIOS files are looked for: /bios itself, for the three files as
+// Where the BIOS files are looked for: BIOS itself, for the three files as
 // they are, then each zip kept there. The first that has a file wins, so a
 // file given apart replaces the zip's.
 function applyBios()
@@ -532,7 +538,7 @@ async function keepBios( name, blob )
 }
 
 // Takes a file given to the page: a BIOS file or the zip that holds them is
-// kept in /bios, an image is kept and loaded.
+// kept in BIOS, an image is kept and loaded.
 async function take( name, blob )
 {
   const lower = name.toLowerCase();
