@@ -117,11 +117,18 @@ struct BreakpointHit
   std::optional<Arm7Registers> arm7;
 };
 
-/// An instruction the 68000 executed, and when it began.
+/// An instruction the 68000 executed, when it began, and, when the trace
+/// keeps them (Machine::setTraceRegisters), its registers as they were before
+/// it; zeros otherwise.
 struct TraceEntry
 {
   std::uint32_t pc{};
+  /// Master ticks since power-up.
   std::int64_t ticks{};
+  std::array<std::uint32_t, 8> d{};
+  /// A7 is the stack pointer in use.
+  std::array<std::uint32_t, 8> a{};
+  std::uint16_t sr{};
 };
 
 /// Which of IGS023's layers the picture is drawn with: all of them, unless a
@@ -212,6 +219,13 @@ public:
   /// Runs until `condition` holds after an instruction, or `timeoutTicks` pass.
   RunResult runUntil( std::function<bool()> const& condition, std::int64_t timeoutTicks );
 
+  /// Runs `instructions` of the 68000, or until `timeoutTicks` pass, which a
+  /// 68000 that waits does: stopped with nothing to wake it, or held in reset.
+  /// The entry into an interrupt is an instruction here, as it is in the
+  /// trace: the 68000 takes it in place of the instruction it was about to
+  /// execute.
+  RunResult step( std::int64_t instructions, std::int64_t timeoutTicks );
+
   [[nodiscard]] Time now() const;
   /// Frame boundaries passed since power-up.
   [[nodiscard]] std::int64_t frame() const;
@@ -233,9 +247,18 @@ public:
   [[nodiscard]] std::optional<std::string> disassembleArm7( std::uint32_t address, bool thumb, int& length ) const;
   /// The instruction at `address`, and its length in bytes.
   [[nodiscard]] std::string disassemble( std::uint32_t address, int& length ) const;
-  /// The word at `address` as the 68000 would read it from ROM or work RAM, or
-  /// 0 elsewhere; it clocks no device.
+  /// The word at `address` as the 68000 would read it from ROM, work RAM,
+  /// VRAM, the palette, IGS023's registers or the cartridge's protection, or 0
+  /// elsewhere; it clocks no device.
   [[nodiscard]] std::uint16_t peek( std::uint32_t address ) const;
+  /// `size` bytes of the 68000's address space from `address` on, read as
+  /// peek() reads them. The space is 16 MB, and what runs past its end is
+  /// left out.
+  [[nodiscard]] std::vector<std::uint8_t> readBus( std::uint32_t address, std::size_t size ) const;
+  /// Writes `bytes` into the 68000's address space from `address` on, as a
+  /// debugger does: no bus cycle is made. False, and nothing written, when a
+  /// byte falls where no RAM is mapped: outside work RAM, VRAM and the palette.
+  bool writeBus( std::uint32_t address, std::span<std::uint8_t const> bytes );
 
   /// The whole board's state, as a save state holds it: everything a run
   /// changes, and nothing of the ROMs, the breakpoints or the listeners.
@@ -269,10 +292,28 @@ public:
   /// The access that ended the last run at a watchpoint.
   [[nodiscard]] std::optional<WatchpointHit> const& watchpointHit() const;
 
-  /// The last `count` instructions the 68000 executed, oldest first; at most
-  /// TRACE_SIZE are kept.
+  /// How many instructions the trace keeps unless it is told otherwise, and
+  /// the most it can be told to: 88 bytes each.
   static constexpr std::size_t TRACE_SIZE = 4096;
-  [[nodiscard]] std::vector<TraceEntry> trace( std::size_t count ) const;
+  static constexpr std::size_t MAX_TRACE_SIZE = std::size_t{ 1 } << 22U;
+  /// Keeps the last `instructions` executed from now on, 1 to MAX_TRACE_SIZE;
+  /// of those kept now, the newest that fit stay.
+  void setTraceSize( std::size_t instructions );
+  [[nodiscard]] std::size_t traceSize() const;
+  /// Whether the trace keeps the registers before every instruction. It does
+  /// not unless told to: copying them costs every run a few percent of its
+  /// speed. A change empties the trace, so that every instruction in it has
+  /// its registers or none has.
+  void setTraceRegisters( bool kept );
+  [[nodiscard]] bool traceRegisters() const;
+  /// How many instructions the trace holds now.
+  [[nodiscard]] std::size_t traceCount() const;
+  /// The instruction executed `index` before the last one, 0 being the last;
+  /// `index` is below traceCount().
+  [[nodiscard]] TraceEntry traceAt( std::size_t index ) const;
+  /// `count` instructions the 68000 executed, oldest first, the newest of
+  /// them being traceAt( from ); fewer when the trace holds fewer.
+  [[nodiscard]] std::vector<TraceEntry> trace( std::size_t count, std::size_t from = 0 ) const;
 
   /// The four input words of PGM.sv, IN0..IN3, with a set bit for a pressed
   /// button; IN3's low byte is the DIP switches. What the control protocol

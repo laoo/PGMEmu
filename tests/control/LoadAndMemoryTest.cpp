@@ -7,6 +7,7 @@
 #include "pgm/Emulator.hpp"
 #include "pgm/control/Dispatcher.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -74,7 +75,8 @@ TEST_CASE( "pgm loads the BIOS alone", "[control]" )
                                                                                       "WORK_RAM",
                                                                                       "VIDEO_RAM",
                                                                                       "PALETTE_RAM",
-                                                                                      "AUDIO_RAM" } ) );
+                                                                                      "AUDIO_RAM",
+                                                                                      "M68K" } ) );
 }
 
 TEST_CASE( "a load that fails says why, and leaves what was loaded", "[control]" )
@@ -247,6 +249,39 @@ TEST_CASE( "memory.write writes RAM as memory.read reads it, addresses in hex to
   REQUIRE( errorCode(
                call( dispatcher, "memory.read", { { "region", "WORK_RAM" }, { "address", "0x" }, { "size", 1 } } ) ) ==
            "bad_request" );
+}
+
+TEST_CASE( "without a region, memory is read and written by the 68000's addresses", "[control]" )
+{
+  Fixture const fixture;
+  pgm::Emulator emulator{ fixture.settings() };
+  Dispatcher const dispatcher{ emulator };
+  REQUIRE( errorCode( call( dispatcher, "memory.read", { { "address", 0 }, { "size", 1 } } ) ) == "not_loaded" );
+  REQUIRE( call( dispatcher, "emu.load_game", { { "name", "testcart" } } ).at( "ok" ) == true );
+  auto const regions = call( dispatcher, "memory.list_regions" ).at( "result" );
+  REQUIRE( std::ranges::find( regions, "M68K" ) != regions.end() );
+
+  // The cartridge's program at its mapping, each word as the 68000 reads it:
+  // the file keeps the low byte first.
+  auto const program = call( dispatcher, "memory.read", { { "address", "0x100000" }, { "size", 4 } } );
+  REQUIRE( program.at( "result" ) ==
+           Json{ { "region", "M68K" }, { "address", 0x100000 }, { "data_hex", "714e754e" } } );
+
+  auto const written = call( dispatcher, "memory.write", { { "address", "0x810100" }, { "data_hex", "c0ffee" } } );
+  REQUIRE( written.at( "result" ) == Json{ { "region", "M68K" }, { "address", 0x810100 }, { "size", 3 } } );
+  REQUIRE( call( dispatcher, "memory.read", { { "region", "WORK_RAM" }, { "address", 0x10100 }, { "size", 3 } } )
+               .at( "result" )
+               .at( "data_hex" ) == "c0ffee" );
+  REQUIRE( call( dispatcher, "memory.read", { { "region", "M68K" }, { "address", 0x810100 }, { "size", 3 } } )
+               .at( "result" )
+               .at( "data_hex" ) == "c0ffee" );
+
+  // The ROM is not RAM, and the space ends at 16 MB.
+  REQUIRE( errorCode( call( dispatcher, "memory.write", { { "address", 0x100000 }, { "data_hex", "00" } } ) ) ==
+           "invalid_range" );
+  REQUIRE( errorCode( call( dispatcher, "memory.read", { { "address", 0xffffff }, { "size", 2 } } ) ) ==
+           "invalid_range" );
+  REQUIRE( call( dispatcher, "memory.read", { { "address", 0xffffff }, { "size", 1 } } ).at( "ok" ) == true );
 }
 
 TEST_CASE( "emu.pause and emu.resume set what emu.status says of the window's own run", "[control]" )

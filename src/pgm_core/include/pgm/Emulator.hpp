@@ -4,6 +4,7 @@
 #include "pgm/cart/PgmImage.hpp"
 #include "pgm/machine/Machine.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -107,6 +108,16 @@ public:
   /// Every region that holds something now, in a stable order.
   [[nodiscard]] std::vector<MemoryRegion> memoryRegions() const;
 
+  /// How many instructions the 68000's trace keeps (machine::Machine::
+  /// setTraceSize): the machine's now, and that of every one powered up after
+  /// it, which a game loaded or a region set is.
+  [[nodiscard]] std::size_t traceSize() const;
+  void setTraceSize( std::size_t instructions );
+  /// Whether the trace keeps registers (machine::Machine::setTraceRegisters),
+  /// likewise.
+  [[nodiscard]] bool traceRegisters() const;
+  void setTraceRegisters( bool kept );
+
   /// Whether the frontend's own run is paused. The emulator runs only when it
   /// is asked to; the desktop application runs it frame after frame, unless
   /// this is set. A breakpoint or a watchpoint that its run reaches sets it.
@@ -133,6 +144,8 @@ private:
   /// The agnostic id of the region chosen when the game was loaded.
   std::optional<std::uint32_t> mRegion;
   bool mPaused{};
+  std::size_t mTraceSize{ machine::Machine::TRACE_SIZE };
+  bool mTraceRegisters{};
   // Declared last, so that it goes before the ROMs it reads from.
   std::unique_ptr<machine::Machine> mMachine;
 };

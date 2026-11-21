@@ -30,6 +30,7 @@ Dispatcher::Dispatcher( Emulator& emulator )
   addMemoryMethods( *this, emulator );
   addRunMethods( *this, emulator );
   addCpuMethods( *this, emulator );
+  addTraceMethods( *this, emulator );
   addVideoMethods( *this, emulator );
   addAudioMethods( *this, emulator );
   addInputMethods( *this, emulator );

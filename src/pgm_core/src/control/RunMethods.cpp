@@ -21,6 +21,12 @@ using Predicate = std::function<bool()>;
 /// is still answered.
 constexpr std::uint64_t DEFAULT_TIMEOUT_TICKS = 1'000'000'000;
 
+/// The most instructions one `emu.step` runs.
+constexpr std::uint64_t MAX_STEPS = 1'000'000;
+
+/// The 68000's address space, which `memory_equals` reads.
+constexpr std::uint64_t ADDRESS_SPACE = 0x1000000;
+
 std::string_view reasonName( machine::StopReason reason )
 {
   switch ( reason )
@@ -53,15 +59,6 @@ std::string_view cpuName( machine::Cpu cpu )
     break;
   }
   return "m68k";
-}
-
-Json resultOf( machine::RunResult const& run, machine::Machine const& machine )
-{
-  Json result{ { "reason", reasonName( run.reason ) },
-               { "ticks_executed", run.ticks },
-               { "frames_executed", run.frames } };
-  result.update( debugStopOf( machine ) );
-  return result;
 }
 
 std::expected<machine::Machine*, Error> loadedMachine( Emulator& emulator )
@@ -175,6 +172,41 @@ std::expected<Predicate, Error> parseCondition( Json const& condition, machine::
     }
   }
 
+  if ( *type == "memory_equals" )
+  {
+    auto const address = requireUnsigned( condition, "address" );
+    auto const wanted = requireUnsigned( condition, "value" );
+    auto const size = optionalUnsigned( condition, "size", 1, 1, 4 );
+    if ( !address || !wanted )
+    {
+      return std::unexpected( !address ? address.error() : wanted.error() );
+    }
+    if ( !size )
+    {
+      return std::unexpected( size.error() );
+    }
+    if ( *size == 3 || *address >= ADDRESS_SPACE || *size > ADDRESS_SPACE - *address )
+    {
+      return std::unexpected(
+          badRequest( "memory_equals compares 1, 2 or 4 bytes within the 68000's 16 MB address space" ) );
+    }
+    return [&machine,
+            at = static_cast<std::uint32_t>( *address ),
+            bytes = static_cast<std::uint32_t>( *size ),
+            value = *wanted]
+    {
+      // The bytes are taken in address order, the first the most significant,
+      // as the 68000 reads a word or a long.
+      std::uint64_t held = 0;
+      for ( std::uint32_t i = 0; i < bytes; ++i )
+      {
+        std::uint16_t const word = machine.peek( at + i );
+        held = ( held << 8U ) | ( ( ( at + i ) & 1U ) == 0 ? word >> 8U : word & 0xffU );
+      }
+      return held == value;
+    };
+  }
+
   if ( type->starts_with( "signal_" ) )
   {
     auto const name = requireString( condition, "signal" );
@@ -225,6 +257,15 @@ std::expected<Predicate, Error> parseCondition( Json const& condition, machine::
 }
 
 } // namespace
+
+Json runJson( machine::RunResult const& run, machine::Machine const& machine )
+{
+  Json result{ { "reason", reasonName( run.reason ) },
+               { "ticks_executed", run.ticks },
+               { "frames_executed", run.frames } };
+  result.update( debugStopOf( machine ) );
+  return result;
+}
 
 Json debugStopOf( machine::Machine const& machine )
 {
@@ -287,7 +328,7 @@ void addRunMethods( Dispatcher& dispatcher, Emulator& emulator )
         {
           return std::unexpected( !machine ? machine.error() : count.error() );
         }
-        return resultOf( ( *machine )->runFrames( static_cast<std::int64_t>( *count ) ), **machine );
+        return runJson( ( *machine )->runFrames( static_cast<std::int64_t>( *count ) ), **machine );
       } );
 
   dispatcher.add( "emu.run_cycles",
@@ -302,15 +343,17 @@ void addRunMethods( Dispatcher& dispatcher, Emulator& emulator )
                     {
                       return std::unexpected( !machine ? machine.error() : count.error() );
                     }
-                    return resultOf( ( *machine )->runTicks( static_cast<std::int64_t>( *count ) ), **machine );
+                    return runJson( ( *machine )->runTicks( static_cast<std::int64_t>( *count ) ), **machine );
                   } );
 
   dispatcher.add(
       "emu.run_until",
       info( "Runs until a condition holds after a 68000 instruction, or a timeout passes. Conditions: {type: "
-            "cpu_pc_equals, value}, {type: cpu_pc_in_range | cpu_pc_out_of_range, start, end}, {type: signal_equals | "
-            "signal_not_equals | signal_less_than | signal_less_equal | signal_greater_than | signal_greater_equal, "
-            "signal: vblank | hblank | line | frame, value}, and {type: and | or | not, children: [...]}.",
+            "cpu_pc_equals, value}, {type: cpu_pc_in_range | cpu_pc_out_of_range, start, end}, {type: memory_equals, "
+            "address, value, size}: the 1 (the default), 2 or 4 bytes at a 68000 address hold the value, {type: "
+            "signal_equals | signal_not_equals | signal_less_than | signal_less_equal | signal_greater_than | "
+            "signal_greater_equal, signal: vblank | hblank | line | frame, value}, and {type: and | or | not, "
+            "children: [...]}.",
             { { .name = "condition", .type = "object", .description = "The condition, as described above." },
               { .name = "timeout_cycles",
                 .type = "integer",
@@ -343,7 +386,34 @@ void addRunMethods( Dispatcher& dispatcher, Emulator& emulator )
           }
           timeout = *given;
         }
-        return resultOf( ( *machine )->runUntil( *predicate, static_cast<std::int64_t>( timeout ) ), **machine );
+        return runJson( ( *machine )->runUntil( *predicate, static_cast<std::int64_t>( timeout ) ), **machine );
+      } );
+
+  dispatcher.add(
+      "emu.step",
+      info( "Runs 68000 instructions one at a time, and answers as emu.run_frames does, with the instruction the "
+            "68000 stands at after them as pc and disasm. Stops early at a breakpoint or a watchpoint.",
+            { { .name = "count",
+                .type = "integer",
+                .description = "Instructions to run, 1 to 1000000; 1 if left out.",
+                .required = false } } ),
+      [&emulator]( Json const& params ) -> Outcome
+      {
+        auto machine = loadedMachine( emulator );
+        auto const count = optionalUnsigned( params, "count", 1, 1, MAX_STEPS );
+        if ( !machine || !count )
+        {
+          return std::unexpected( !machine ? machine.error() : count.error() );
+        }
+        Json result = runJson(
+            ( *machine )
+                ->step( static_cast<std::int64_t>( *count ), static_cast<std::int64_t>( DEFAULT_TIMEOUT_TICKS ) ),
+            **machine );
+        std::uint32_t const pc = ( *machine )->m68kState().pc;
+        int length = 0;
+        result["pc"] = pc;
+        result["disasm"] = ( *machine )->disassemble( pc, length );
+        return result;
       } );
 
   dispatcher.alias( "sim.reset", "emu.reset" );

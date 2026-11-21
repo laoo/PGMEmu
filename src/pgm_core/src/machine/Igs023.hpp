@@ -93,6 +93,12 @@ public:
   /// The same two, for a debugger to write.
   [[nodiscard]] std::span<std::uint8_t> vramForDebugger();
   [[nodiscard]] std::span<std::uint8_t> paletteForDebugger();
+  /// The word read() would answer at `address`, for a debugger: the chip is
+  /// not brought up to any time, so a register is as it last was.
+  [[nodiscard]] std::uint16_t peek( std::uint32_t address ) const;
+  /// Writes the byte at `address` of VRAM or the palette, as the 68000
+  /// addresses them, for a debugger; nothing in the registers.
+  void poke( std::uint32_t address, std::uint8_t value );
 
   /// The last complete frame, RGBA, 448 by 224, and how many have completed.
   [[nodiscard]] std::span<std::uint8_t const> frame() const;

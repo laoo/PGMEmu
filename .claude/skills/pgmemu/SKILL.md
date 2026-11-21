@@ -56,15 +56,15 @@ raw JSON, an integer may be a string `"0x1478"`. The answer is the result as JSO
 |---|---|
 | Load, reset, see where it is | `emu.load_game {name, region}`, `emu.reset {cycles: 100}`, `emu.status`, `emu.cartridge_info` |
 | Region | `emu.set_region {region}`: a code from `emu.cartridge_info`'s `region_info`, such as `JAPN`; powers up anew |
-| Run | `emu.run_frames {count}` (60 is a second), `emu.run_cycles {count}` (50 MHz master ticks), `emu.run_until {condition, timeout_cycles}` |
+| Run | `emu.run_frames {count}` (60 is a second), `emu.run_cycles {count}` (50 MHz master ticks), `emu.step {count}` (68000 instructions; answers the next `pc` and `disasm`), `emu.run_until {condition, timeout_cycles}` (a PC, a raster signal, or `{type: memory_equals, address, value, size}`) |
 | Stop at code | `debug.breakpoint.add/remove/list {address, cpu}` (`m68k` by default, `z80`, `arm7`): the 68000 stops before that instruction; for the Z80 or the ARM7 the run stops just after, and the answer's `breakpoint.registers` are theirs at the breakpoint |
 | Stop at data | `debug.watchpoint.add {address, size, access: read/write/access}`: a run stops after the instruction, and its answer says what was accessed and from where |
-| See what ran | `debug.trace {count}`: the last instructions, with disassembly |
+| See what ran | `debug.trace {count, from, registers}`: the last instructions, with disassembly. `debug.trace.find {pc, pc_start, pc_end, where, disasm_contains, from, limit}` searches them on the emulator's side. `debug.trace.configure {instructions, registers}` keeps more than the 4096 it keeps unless told (a frame is some tens of thousands), and the registers before each, which `registers` and `where` need |
 | CPUs | `cpu.get_state` (68000), `cpu.get_state {cpu: z80}`, `cpu.get_state {cpu: arm7}` (the IGS027A's), `cpu.disassemble {address, count, cpu}` |
-| Memory | `memory.list_regions`, `memory.read {region, address, size}` (WORK_RAM is 0x800000-0x81FFFF, in 68000 byte order), `memory.write {region, address, data_hex}` (WORK_RAM, VIDEO_RAM, PALETTE_RAM, AUDIO_RAM) |
-| Picture | `video.screenshot {path}`, `video.sprites`, `video.registers`, `video.layers {text, background, sprites}`, `video.tiles {layer, first, count, palette, path}`, `video.tilemap {layer, path}` |
+| Memory | `memory.read {address, size}` and `memory.write {address, data_hex}` take the 68000's own addresses when no region is named (work RAM is 0x800000-0x81FFFF, VRAM 0x900000, the palette 0xA00000), in 68000 byte order. With `region`, a name from `memory.list_regions`, `address` is an offset in it: the ROMs as their files hold them, and `AUDIO_RAM`, the Z80's |
+| Picture | `video.screenshot {path, scale}`, `video.sprites`, `video.registers`, `video.layers {text, background, sprites}`, `video.tiles {layer, first, count, palette, path}`, `video.tilemap {layer, path}` |
 | Sound | `audio.voices`, `audio.capture_start {path}` / `audio.capture_stop` (a WAV) |
-| Input | `input.press {name}` (up, down, left, right, button1-4, start, coin: held two frames, released two), `input.set` / `input.clear` |
+| Input | `input.press {name}` (up, down, left, right, button1-4, start, coin: held two frames, released two), or `input.press {buttons: [...], frames, release_frames}` for several at once and for longer; `input.set` / `input.clear` hold one and let it go, `input.hold {buttons: [...]}` holds exactly those listed |
 | State | `state.save {filename}`, `state.load {filename}`, `state.list`, `nvram.save/load` |
 | PGMTest | `test.status` (a page's status block), `debug_link.start/write/read/stop` |
 | The window | `emu.pause`, `emu.resume`: the game on screen stops running by itself |
@@ -85,8 +85,8 @@ is a word address in the B ROM.
 
 Every game runs its vertical-blank handler each frame, and the BIOS finds it through work RAM:
 its level-6 vector leads to `move.l $801478,-(A7); rts`. So, once a game runs, the long at
-WORK_RAM 0x1478 (`memory.read region=WORK_RAM address=0x1478 size=4`; work RAM reads in 68000
-order) is the game's handler, a good first breakpoint. Or run a few frames and read
+0x801478 (`memory.read address=0x801478 size=4`; work RAM reads in 68000 order) is the game's
+handler, a good first breakpoint. Or run a few frames and read
 `debug.trace` to see the code that is running, then `cpu.disassemble` around it.
 
 The ROM regions (`BIOS_PROG_ROM`, `CART_PROG_ROM`) read in their files' order, each 16-bit word's
@@ -97,7 +97,7 @@ low byte first: `0000be0c` there is the long 0x00000cbe.
 ```sh
 scripts/pgmemu.py emu.load_game name=orlegend
 scripts/pgmemu.py emu.run_frames count=2400            # past the warning screen, into the attract mode
-scripts/pgmemu.py memory.read region=WORK_RAM address=0x1478 size=4   # the vblank handler: 0010089c
+scripts/pgmemu.py memory.read address=0x801478 size=4   # the vblank handler: 0010089c
 scripts/pgmemu.py debug.breakpoint.add address=0x10089c
 scripts/pgmemu.py emu.run_frames count=60              # reason: breakpoint
 scripts/pgmemu.py cpu.get_state

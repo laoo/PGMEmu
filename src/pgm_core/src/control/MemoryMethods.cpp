@@ -71,6 +71,28 @@ std::optional<std::vector<std::uint8_t>> fromHex( std::string const& hex )
   return bytes;
 }
 
+/// The region that is the 68000's address space rather than a block of
+/// memory: read and written through the bus's decode, as a debugger does.
+constexpr std::string_view BUS_REGION = "M68K";
+constexpr std::uint64_t BUS_SIZE = 0x1000000;
+
+/// The region `params` name: the 68000's address space when they name none.
+std::expected<std::string, Error> regionOf( Json const& params )
+{
+  if ( !params.contains( "region" ) )
+  {
+    return std::string{ BUS_REGION };
+  }
+  return requireString( params, "region" );
+}
+
+Error pastTheEnd( std::uint64_t size, std::uint64_t address, std::uint64_t regionSize, std::string_view name )
+{
+  return Error{ .code = "invalid_range",
+                .message =
+                    fmt::format( "{} bytes at {} run past the {} bytes of {}", size, address, regionSize, name ) };
+}
+
 /// The RAM a region name is, for memory.write.
 std::optional<machine::Ram> ramNamed( std::string_view name )
 {
@@ -106,22 +128,29 @@ void addMemoryMethods( Dispatcher& dispatcher, Emulator& emulator )
                     {
                       names.push_back( region.name );
                     }
+                    if ( emulator.machine() != nullptr )
+                    {
+                      names.push_back( BUS_REGION );
+                    }
                     return names;
                   } );
 
   dispatcher.add(
       "memory.read",
       info( "Reads bytes of a memory region, at most 1 MB, answered as lowercase hex. Work RAM is in 68000 byte order: "
-            "the high byte of a word first.",
+            "the high byte of a word first. Without a region, address is one of the 68000's, such as 0x810000.",
             { { .name = "region",
                 .type = "string",
-                .description =
-                    "A name from memory.list_regions, such as WORK_RAM, VIDEO_RAM, PALETTE_RAM or AUDIO_RAM." },
-              { .name = "address", .type = "integer", .description = "The first byte's offset in the region." },
+                .description = "A name from memory.list_regions, such as WORK_RAM, VIDEO_RAM, PALETTE_RAM or "
+                               "AUDIO_RAM; M68K, the 68000's address space, if left out.",
+                .required = false },
+              { .name = "address",
+                .type = "integer",
+                .description = "The first byte's offset in the region; in M68K, its address." },
               { .name = "size", .type = "integer", .description = "How many bytes, at most 1048576." } } ),
       [&emulator]( Json const& params ) -> Outcome
       {
-        auto const name = requireString( params, "region" );
+        auto const name = regionOf( params );
         if ( !name )
         {
           return std::unexpected( name.error() );
@@ -142,6 +171,22 @@ void addMemoryMethods( Dispatcher& dispatcher, Emulator& emulator )
               badRequest( fmt::format( "size {} is above the limit of {} bytes", *size, MAX_READ ) ) );
         }
 
+        if ( *name == BUS_REGION )
+        {
+          machine::Machine const* const machine = emulator.machine();
+          if ( machine == nullptr )
+          {
+            return std::unexpected( Error{ .code = "not_loaded", .message = "No game is loaded" } );
+          }
+          if ( *address > BUS_SIZE || *size > BUS_SIZE - *address )
+          {
+            return std::unexpected( pastTheEnd( *size, *address, BUS_SIZE, *name ) );
+          }
+          auto const bytes =
+              machine->readBus( static_cast<std::uint32_t>( *address ), static_cast<std::size_t>( *size ) );
+          return Json{ { "region", *name }, { "address", *address }, { "data_hex", toHex( bytes ) } };
+        }
+
         auto const regions = emulator.memoryRegions();
         auto const region = std::ranges::find( regions, *name, &MemoryRegion::name );
         if ( region == regions.end() )
@@ -151,10 +196,7 @@ void addMemoryMethods( Dispatcher& dispatcher, Emulator& emulator )
         }
         if ( *address > region->bytes.size() || *size > region->bytes.size() - *address )
         {
-          return std::unexpected( Error{
-              .code = "invalid_range",
-              .message = fmt::format(
-                  "{} bytes at {} run past the {} bytes of {}", *size, *address, region->bytes.size(), *name ) } );
+          return std::unexpected( pastTheEnd( *size, *address, region->bytes.size(), *name ) );
         }
 
         auto const bytes =
@@ -166,15 +208,19 @@ void addMemoryMethods( Dispatcher& dispatcher, Emulator& emulator )
       "memory.write",
       info( "Writes bytes into a RAM, as a debugger does: no bus cycle is made. The bytes are laid out as memory.read "
             "reads them; work RAM in 68000 byte order. The whole range is checked first, so the write is made whole "
-            "or not at all.",
+            "or not at all. Without a region, address is one of the 68000's, where RAM is mapped.",
             { { .name = "region",
                 .type = "string",
-                .description = "WORK_RAM, VIDEO_RAM, PALETTE_RAM or AUDIO_RAM. The ROMs cannot be written." },
-              { .name = "address", .type = "integer", .description = "The first byte's offset in the region." },
+                .description = "WORK_RAM, VIDEO_RAM, PALETTE_RAM or AUDIO_RAM; M68K, the 68000's address space, if "
+                               "left out. The ROMs cannot be written.",
+                .required = false },
+              { .name = "address",
+                .type = "integer",
+                .description = "The first byte's offset in the region; in M68K, its address." },
               { .name = "data_hex", .type = "string", .description = "The bytes, two hex digits each." } } ),
       [&emulator]( Json const& params ) -> Outcome
       {
-        auto const name = requireString( params, "region" );
+        auto const name = regionOf( params );
         if ( !name )
         {
           return std::unexpected( name.error() );
@@ -204,6 +250,21 @@ void addMemoryMethods( Dispatcher& dispatcher, Emulator& emulator )
         if ( machine == nullptr )
         {
           return std::unexpected( Error{ .code = "not_loaded", .message = "No game is loaded" } );
+        }
+        if ( *name == BUS_REGION )
+        {
+          if ( *address > BUS_SIZE || bytes->size() > BUS_SIZE - *address )
+          {
+            return std::unexpected( pastTheEnd( bytes->size(), *address, BUS_SIZE, *name ) );
+          }
+          if ( !machine->writeBus( static_cast<std::uint32_t>( *address ), *bytes ) )
+          {
+            return std::unexpected( Error{
+                .code = "invalid_range",
+                .message = fmt::format(
+                    "{} bytes at {} do not all fall in work RAM, VRAM or the palette", bytes->size(), *address ) } );
+          }
+          return Json{ { "region", *name }, { "address", *address }, { "size", bytes->size() } };
         }
         auto const ram = ramNamed( *name );
         if ( !ram )

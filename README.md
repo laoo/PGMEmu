@@ -110,9 +110,10 @@ Useful options:
 ## Remote control
 
 Other programs can control a running emulator, with or without the window. They can load a game,
-run it by frames, by cycles or until a condition, press buttons, read and write memory, read
-registers, disassemble code, set breakpoints on the 68000, the Z80 and the ARM7, set watchpoints,
-save and load states, look at the sprites, layers and tiles, take screenshots and record the sound.
+run it by frames, by cycles, by instructions or until a condition, press buttons, read and write
+memory, read registers, disassemble code, set breakpoints on the 68000, the Z80 and the ARM7, set
+watchpoints, search the history of what the 68000 executed, save and load states, look at the
+sprites, layers and tiles, take screenshots and record the sound.
 
 There is one set of methods. It is available in two ways:
 

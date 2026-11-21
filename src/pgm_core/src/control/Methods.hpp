@@ -20,6 +20,7 @@ void addEmuMethods( Dispatcher& dispatcher, Emulator& emulator );
 void addMemoryMethods( Dispatcher& dispatcher, Emulator& emulator );
 void addRunMethods( Dispatcher& dispatcher, Emulator& emulator );
 void addCpuMethods( Dispatcher& dispatcher, Emulator& emulator );
+void addTraceMethods( Dispatcher& dispatcher, Emulator& emulator );
 void addVideoMethods( Dispatcher& dispatcher, Emulator& emulator );
 void addAudioMethods( Dispatcher& dispatcher, Emulator& emulator );
 void addInputMethods( Dispatcher& dispatcher, Emulator& emulator );
@@ -52,6 +53,15 @@ std::expected<std::string, Error> requireString( Json const& params, std::string
 /// is missing or is not one. A string of hex digits after `0x` or `$` is one
 /// too.
 std::expected<std::uint64_t, Error> requireUnsigned( Json const& params, std::string_view name );
+
+/// `params[name]` as requireUnsigned() reads it, or `fallback` when the
+/// parameter is left out. A `bad_request` when it is outside `low` to `high`.
+std::expected<std::uint64_t, Error> optionalUnsigned(
+    Json const& params, std::string_view name, std::uint64_t fallback, std::uint64_t low, std::uint64_t high );
+
+/// A run's answer, as `emu.run_frames` gives it: why it ended, how long it
+/// took, and the breakpoint or the watchpoint it stopped at.
+Json runJson( machine::RunResult const& run, machine::Machine const& machine );
 
 /// A CPU's registers as `cpu.get_state` answers them, without what it adds of
 /// the machine (`halted`, `disasm`).

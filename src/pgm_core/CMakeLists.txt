@@ -16,6 +16,7 @@ add_library( pgm_core
   src/control/RunMethods.cpp
   src/control/StateMethods.cpp
   src/control/TestMethods.cpp
+  src/control/TraceMethods.cpp
   src/control/VideoMethods.cpp
   src/cpu/Arm7.cpp
   src/cpu/Arm7Disassembler.cpp

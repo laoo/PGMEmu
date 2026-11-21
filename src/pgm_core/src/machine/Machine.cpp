@@ -119,6 +119,36 @@ Sdram sdramOf( cart::Bios const& bios, cart::PgmImage const* cartridge )
 constexpr std::uint32_t STATE_MAGIC = 0x54534750; // "PGST"
 constexpr std::uint32_t STATE_VERSION = 4;
 
+/// An instruction as the trace keeps it: the time and Moira's registers as
+/// they are, so that keeping one costs a run copies and no arithmetic. A
+/// TraceEntry is made of it when one is asked for.
+struct TraceRecord
+{
+  Time at{};
+  /// D0-D7, then A0-A7.
+  std::array<std::uint32_t, 16> r{};
+  std::uint32_t pc{};
+  moira::StatusRegister sr{};
+};
+
+/// The status register as the 68000 holds it, of the flags Moira keeps apart.
+std::uint16_t statusWord( moira::StatusRegister const& sr )
+{
+  auto const bit = []( bool flag, unsigned at ) { return ( flag ? 1U : 0U ) << at; };
+  return static_cast<std::uint16_t>( bit( sr.t1, 15 ) | bit( sr.s, 13 ) | ( ( sr.ipl & 7U ) << 8U ) | bit( sr.x, 4 ) |
+                                     bit( sr.n, 3 ) | bit( sr.z, 2 ) | bit( sr.v, 1 ) | bit( sr.c, 0 ) );
+}
+
+TraceEntry entryOf( TraceRecord const& record )
+{
+  TraceEntry entry{
+    .pc = record.pc, .ticks = masterTicks( record.at ), .d = {}, .a = {}, .sr = statusWord( record.sr )
+  };
+  std::copy_n( record.r.begin(), 8, entry.d.begin() );
+  std::copy_n( record.r.begin() + 8, 8, entry.a.begin() );
+  return entry;
+}
+
 } // namespace
 
 struct Machine::Parts
@@ -144,8 +174,16 @@ struct Machine::Parts
     cpu.watch( watch );
   }
 
-  /// Runs until `until`, or until `condition` holds after an instruction.
-  RunResult run( Time until, std::function<bool()> const* condition );
+  /// Runs until `until`, until `condition` holds after an instruction, or,
+  /// when `instructions` is above zero, until that many have executed. Time
+  /// running out is a timeout for a run that waited for either.
+  RunResult run( Time until, std::function<bool()> const* condition, std::int64_t instructions = 0 );
+
+  /// The instruction executed `index` before the last one.
+  [[nodiscard]] TraceRecord const& traced( std::size_t index ) const
+  {
+    return traceRing[( traceNext + traceRing.size() - 1 - index ) % traceRing.size()];
+  }
 
   /// The board's IGS027A, or null.
   [[nodiscard]] Igs027a* arm() const
@@ -216,8 +254,10 @@ struct Machine::Parts
   std::optional<BreakpointHit> hit;
   WatchState watch;
   /// The last instructions executed, a ring: traceNext is where the next goes.
-  std::array<TraceEntry, Machine::TRACE_SIZE> traceRing{};
+  std::vector<TraceRecord> traceRing = std::vector<TraceRecord>( Machine::TRACE_SIZE );
   std::size_t traceNext{};
+  /// Whether an instruction's registers are kept with it.
+  bool traceRegisters{};
   std::size_t traceCount{};
   /// The sound produced by the last run, and who hears it as the run ends.
   std::vector<AudioFrame> audio;
@@ -246,8 +286,9 @@ struct Machine::Parts
   M68k cpu;
 };
 
-RunResult Machine::Parts::run( Time until, std::function<bool()> const* condition )
+RunResult Machine::Parts::run( Time until, std::function<bool()> const* condition, std::int64_t instructions )
 {
+  bool const waits = condition != nullptr || instructions > 0;
   audio.clear();
   watch.hit.reset();
   hit.reset();
@@ -332,8 +373,15 @@ RunResult Machine::Parts::run( Time until, std::function<bool()> const* conditio
       continue;
     }
 
-    traceRing.at( traceNext ) = TraceEntry{ .pc = pc, .ticks = masterTicks( now ) };
-    traceNext = ( traceNext + 1 ) % traceRing.size();
+    TraceRecord& record = traceRing[traceNext];
+    record.at = now;
+    record.pc = pc;
+    if ( traceRegisters )
+    {
+      cpu.copyRegisters( record.r );
+      record.sr = cpu.statusRegister();
+    }
+    traceNext = traceNext + 1 == traceRing.size() ? 0 : traceNext + 1;
     traceCount = std::min( traceCount + 1, traceRing.size() );
     cpu.execute();
     if ( cpu.isHalted() )
@@ -351,9 +399,17 @@ RunResult Machine::Parts::run( Time until, std::function<bool()> const* conditio
     {
       return result( StopReason::CONDITION_MET );
     }
+    if ( instructions > 0 )
+    {
+      --instructions;
+      if ( instructions == 0 )
+      {
+        return result( StopReason::COMPLETED );
+      }
+    }
   }
   video.advanceTo( now );
-  return result( condition != nullptr ? StopReason::TIMEOUT : StopReason::COMPLETED );
+  return result( waits ? StopReason::TIMEOUT : StopReason::COMPLETED );
 }
 
 Machine::Machine( cart::Bios const& bios, cart::PgmImage const* cartridge, std::optional<std::uint32_t> region )
@@ -404,6 +460,15 @@ RunResult Machine::runTicks( std::int64_t masterTicks )
 RunResult Machine::runUntil( std::function<bool()> const& condition, std::int64_t timeoutTicks )
 {
   return mParts->run( mParts->now + ( timeoutTicks * UNITS_PER_MASTER_TICK ), &condition );
+}
+
+RunResult Machine::step( std::int64_t instructions, std::int64_t timeoutTicks )
+{
+  if ( instructions <= 0 )
+  {
+    return RunResult{ .reason = StopReason::COMPLETED, .ticks = 0, .frames = 0 };
+  }
+  return mParts->run( mParts->now + ( timeoutTicks * UNITS_PER_MASTER_TICK ), nullptr, instructions );
 }
 
 Time Machine::now() const
@@ -463,6 +528,42 @@ std::string Machine::disassemble( std::uint32_t address, int& length ) const
 std::uint16_t Machine::peek( std::uint32_t address ) const
 {
   return mParts->bus.peek( address );
+}
+
+std::vector<std::uint8_t> Machine::readBus( std::uint32_t address, std::size_t size ) const
+{
+  Bus68k const& bus = mParts->bus;
+  size = address < Bus68k::ADDRESS_SPACE ? std::min<std::size_t>( size, Bus68k::ADDRESS_SPACE - address ) : 0;
+  std::vector<std::uint8_t> bytes;
+  bytes.reserve( size );
+  for ( std::size_t i = 0; i < size; ++i )
+  {
+    auto const at = static_cast<std::uint32_t>( address + i );
+    std::uint16_t const word = bus.peek( at );
+    bytes.push_back( static_cast<std::uint8_t>( ( at & 1U ) == 0 ? word >> 8U : word ) );
+  }
+  return bytes;
+}
+
+bool Machine::writeBus( std::uint32_t address, std::span<std::uint8_t const> bytes )
+{
+  Bus68k& bus = mParts->bus;
+  if ( address >= Bus68k::ADDRESS_SPACE || bytes.size() > Bus68k::ADDRESS_SPACE - address )
+  {
+    return false;
+  }
+  for ( std::size_t i = 0; i < bytes.size(); ++i )
+  {
+    if ( !bus.isRam( static_cast<std::uint32_t>( address + i ) ) )
+    {
+      return false;
+    }
+  }
+  for ( std::size_t i = 0; i < bytes.size(); ++i )
+  {
+    bus.poke( static_cast<std::uint32_t>( address + i ), bytes[i] );
+  }
+  return true;
 }
 
 std::vector<std::uint8_t> Machine::saveState()
@@ -592,16 +693,63 @@ std::optional<WatchpointHit> const& Machine::watchpointHit() const
   return mParts->watch.hit;
 }
 
-std::vector<TraceEntry> Machine::trace( std::size_t count ) const
+void Machine::setTraceSize( std::size_t instructions )
+{
+  Parts& parts = *mParts;
+  instructions = std::clamp<std::size_t>( instructions, 1, MAX_TRACE_SIZE );
+  std::size_t const kept = std::min( parts.traceCount, instructions );
+  std::vector<TraceRecord> ring( instructions );
+  for ( std::size_t i = 0; i < kept; ++i )
+  {
+    ring[i] = parts.traced( kept - 1 - i );
+  }
+  parts.traceRing = std::move( ring );
+  parts.traceCount = kept;
+  parts.traceNext = kept % instructions;
+}
+
+std::size_t Machine::traceSize() const
+{
+  return mParts->traceRing.size();
+}
+
+void Machine::setTraceRegisters( bool kept )
+{
+  Parts& parts = *mParts;
+  if ( parts.traceRegisters == kept )
+  {
+    return;
+  }
+  parts.traceRegisters = kept;
+  std::ranges::fill( parts.traceRing, TraceRecord{} );
+  parts.traceNext = 0;
+  parts.traceCount = 0;
+}
+
+bool Machine::traceRegisters() const
+{
+  return mParts->traceRegisters;
+}
+
+std::size_t Machine::traceCount() const
+{
+  return mParts->traceCount;
+}
+
+TraceEntry Machine::traceAt( std::size_t index ) const
+{
+  return entryOf( mParts->traced( index ) );
+}
+
+std::vector<TraceEntry> Machine::trace( std::size_t count, std::size_t from ) const
 {
   Parts const& parts = *mParts;
-  count = std::min( count, parts.traceCount );
+  count = from < parts.traceCount ? std::min( count, parts.traceCount - from ) : 0;
   std::vector<TraceEntry> entries;
   entries.reserve( count );
   for ( std::size_t i = count; i > 0; --i )
   {
-    entries.push_back(
-        parts.traceRing.at( ( parts.traceNext + parts.traceRing.size() - i ) % parts.traceRing.size() ) );
+    entries.push_back( entryOf( parts.traced( from + i - 1 ) ) );
   }
   return entries;
 }

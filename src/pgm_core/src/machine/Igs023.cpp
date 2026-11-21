@@ -890,6 +890,48 @@ std::span<std::uint8_t> Igs023::paletteForDebugger()
   return mPalette;
 }
 
+std::uint16_t Igs023::peek( std::uint32_t address ) const
+{
+  switch ( ( address >> 20U ) & 0x3U )
+  {
+  case 1:
+  {
+    std::size_t const word = address & 0x7ffeU;
+    return static_cast<std::uint16_t>( ( mVram[physical( word | 1U )] << 8U ) | mVram[physical( word )] );
+  }
+  case 2:
+  {
+    std::size_t const at = address & 0x1ffeU;
+    return static_cast<std::uint16_t>( ( mPalette[at] << 8U ) | mPalette[at + 1] );
+  }
+  case 3:
+  {
+    std::size_t const index = ( address >> 12U ) & 0xfU;
+    return index == ZOOM_TABLE ? mZoomTable[( address >> 1U ) & 0x1fU] : mControl[index];
+  }
+  default:
+    return 0;
+  }
+}
+
+void Igs023::poke( std::uint32_t address, std::uint8_t value )
+{
+  switch ( ( address >> 20U ) & 0x3U )
+  {
+  case 1:
+    // The upper byte of a word, at the even address, sits at the odd
+    // physical one.
+    mVram[physical( ( address & 0x7fffU ) ^ 1U )] = value;
+    break;
+  case 2:
+    mPalette[address & 0x1fffU] = value;
+    mRgbaStale = true;
+    break;
+  default:
+    break;
+  }
+}
+
 int Igs023::line( Time now )
 {
   return static_cast<int>( ( dotsAt( now ) / DOTS_PER_LINE ) % LINES_PER_FRAME );

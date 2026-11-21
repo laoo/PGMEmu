@@ -3,6 +3,7 @@
 #include <miniz.h>
 #include <spdlog/fmt/fmt.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <fstream>
@@ -40,6 +41,41 @@ std::vector<std::uint8_t> encodePng( std::span<std::uint8_t const> rgba, std::si
   std::vector<std::uint8_t> bytes( static_cast<std::uint8_t*>( png ), static_cast<std::uint8_t*>( png ) + size );
   mz_free( png );
   return bytes;
+}
+
+/// The most `video.screenshot` enlarges a pixel.
+constexpr std::uint64_t MAX_SCALE = 8;
+
+/// RGBA rows of `width` pixels with every pixel made `scale` by `scale`.
+std::vector<std::uint8_t> enlarged( std::span<std::uint8_t const> rgba, std::size_t width, std::size_t scale )
+{
+  std::size_t const rowBytes = width * 4;
+  std::vector<std::uint8_t> large;
+  large.reserve( rgba.size() * scale * scale );
+  for ( std::size_t row = 0; row + rowBytes <= rgba.size(); row += rowBytes )
+  {
+    std::size_t const rowStart = large.size();
+    for ( std::size_t at = row; at < row + rowBytes; at += 4 )
+    {
+      for ( std::size_t i = 0; i < scale; ++i )
+      {
+        large.insert( large.end(),
+                      rgba.begin() + static_cast<std::ptrdiff_t>( at ),
+                      rgba.begin() + static_cast<std::ptrdiff_t>( at + 4 ) );
+      }
+    }
+    // The row just made, again for each line below it.
+    std::size_t const made = rowBytes * scale;
+    for ( std::size_t i = 1; i < scale; ++i )
+    {
+      std::size_t const end = large.size();
+      large.resize( end + made );
+      std::copy_n( large.begin() + static_cast<std::ptrdiff_t>( rowStart ),
+                   made,
+                   large.begin() + static_cast<std::ptrdiff_t>( end ) );
+    }
+  }
+  return large;
 }
 
 std::string base64( std::span<std::uint8_t const> bytes )
@@ -154,6 +190,10 @@ void addVideoMethods( Dispatcher& dispatcher, Emulator& emulator )
             { { .name = "path",
                 .type = "string",
                 .description = "Where to write the PNG; left out, the PNG is returned.",
+                .required = false },
+              { .name = "scale",
+                .type = "integer",
+                .description = "Each pixel as scale by scale pixels, 1 to 8; 1 if left out.",
                 .required = false } } ),
       [&emulator]( Json const& params ) -> Outcome
       {
@@ -162,13 +202,24 @@ void addVideoMethods( Dispatcher& dispatcher, Emulator& emulator )
         {
           return std::unexpected( Error{ .code = "not_loaded", .message = "No game is loaded" } );
         }
-        std::vector<std::uint8_t> const png = encodePng( machine->picture(), WIDTH, HEIGHT );
+        auto const scale = optionalUnsigned( params, "scale", 1, 1, MAX_SCALE );
+        if ( !scale )
+        {
+          return std::unexpected( scale.error() );
+        }
+        auto const factor = static_cast<std::size_t>( *scale );
+        std::vector<std::uint8_t> const png =
+            factor == 1 ? encodePng( machine->picture(), WIDTH, HEIGHT )
+                        : encodePng( enlarged( machine->picture(), WIDTH, factor ), WIDTH * factor, HEIGHT * factor );
         if ( png.empty() )
         {
           return std::unexpected( Error{ .code = "screenshot_failed", .message = "The picture could not be encoded" } );
         }
 
-        Json result{ { "width", WIDTH }, { "height", HEIGHT }, { "frame", machine->picturesDrawn() } };
+        Json result{ { "width", WIDTH * factor },
+                     { "height", HEIGHT * factor },
+                     { "scale", factor },
+                     { "frame", machine->picturesDrawn() } };
         if ( params.contains( "path" ) )
         {
           auto const path = requireString( params, "path" );

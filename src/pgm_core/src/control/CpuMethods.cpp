@@ -403,40 +403,6 @@ void addCpuMethods( Dispatcher& dispatcher, Emulator& emulator )
                     return Json{ { "watchpoints", std::move( points ) } };
                   } );
 
-  dispatcher.add( "debug.trace",
-                  info( "The last instructions the 68000 executed, oldest first, with when each began in master ticks.",
-                        { { .name = "count",
-                            .type = "integer",
-                            .description = "How many, at most 4096; 32 if left out.",
-                            .required = false } } ),
-                  [&emulator]( Json const& params ) -> Outcome
-                  {
-                    auto const machine = loadedMachine( emulator );
-                    if ( !machine )
-                    {
-                      return std::unexpected( machine.error() );
-                    }
-                    std::uint64_t count = 32;
-                    if ( params.contains( "count" ) )
-                    {
-                      auto const given = requireUnsigned( params, "count" );
-                      if ( !given )
-                      {
-                        return std::unexpected( given.error() );
-                      }
-                      count = std::min<std::uint64_t>( *given, machine::Machine::TRACE_SIZE );
-                    }
-                    Json entries = Json::array();
-                    for ( machine::TraceEntry const& entry : ( *machine )->trace( static_cast<std::size_t>( count ) ) )
-                    {
-                      int length = 0;
-                      entries.push_back( Json{ { "pc", entry.pc },
-                                               { "ticks", entry.ticks },
-                                               { "disasm", ( *machine )->disassemble( entry.pc, length ) } } );
-                    }
-                    return Json{ { "instructions", std::move( entries ) } };
-                  } );
-
   dispatcher.add( "debug.breakpoint.list",
                   info( "The addresses of a processor's breakpoints, ascending.",
                         { { .name = "cpu",

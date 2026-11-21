@@ -25,3 +25,10 @@ not json
 {"id":18,"method":"emu.status"}
 {"id":19,"method":"emu.resume"}
 {"id":20,"method":"emu.status"}
+{"id":26,"method":"emu.step"}
+{"id":27,"method":"memory.read","params":{"address":"0x800000","size":4}}
+{"id":28,"method":"debug.trace.find","params":{"pc":"0x400"}}
+{"id":29,"method":"debug.trace.configure"}
+{"id":30,"method":"debug.trace.configure","params":{"instructions":"0x10000"}}
+{"id":31,"method":"debug.trace.configure","params":{"instructions":0}}
+{"id":32,"method":"input.hold","params":{"buttons":["start"]}}

@@ -23,3 +23,10 @@
 {"id":18,"ok":true,"result":{"version":"devel","game_name":null,"region":null,"paused":true}}
 {"id":19,"ok":true,"result":{}}
 {"id":20,"ok":true,"result":{"version":"devel","game_name":null,"region":null,"paused":false}}
+{"id":26,"ok":false,"error":{"code":"not_loaded","message":"No game is loaded"}}
+{"id":27,"ok":false,"error":{"code":"not_loaded","message":"No game is loaded"}}
+{"id":28,"ok":false,"error":{"code":"not_loaded","message":"No game is loaded"}}
+{"id":29,"ok":true,"result":{"instructions":4096,"registers":false}}
+{"id":30,"ok":true,"result":{"instructions":65536,"registers":false}}
+{"id":31,"ok":false,"error":{"code":"bad_request","message":"instructions is 1 to 4194304, not 0"}}
+{"id":32,"ok":false,"error":{"code":"not_loaded","message":"No game is loaded"}}

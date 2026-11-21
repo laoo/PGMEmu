@@ -169,12 +169,42 @@ std::uint16_t Bus68k::peek( std::uint32_t address ) const
   {
     return mRom.word( address );
   }
-  if ( ( address >> 20U ) == 0x8 )
+  switch ( address >> 20U )
+  {
+  case 0x8:
   {
     std::size_t const at = address & 0x1fffeU;
     return static_cast<std::uint16_t>( ( mWorkRam[at] << 8U ) | mWorkRam[at + 1] );
   }
-  return 0;
+  case 0x9:
+  case 0xa:
+  case 0xb:
+    return mVideo.peek( address );
+  default:
+    return 0;
+  }
+}
+
+bool Bus68k::isRam( std::uint32_t address ) const
+{
+  address &= ADDRESS_MASK;
+  std::uint32_t const megabyte = address >> 20U;
+  return megabyte >= 0x8 && megabyte <= 0xa && !isProtection( address );
+}
+
+void Bus68k::poke( std::uint32_t address, std::uint8_t value )
+{
+  address &= ADDRESS_MASK;
+  if ( !isRam( address ) )
+  {
+    return;
+  }
+  if ( ( address >> 20U ) == 0x8 )
+  {
+    mWorkRam[address & 0x1ffffU] = value;
+    return;
+  }
+  mVideo.poke( address, value );
 }
 
 std::span<std::uint8_t const> Bus68k::workRam() const

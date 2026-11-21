@@ -74,6 +74,21 @@ std::expected<std::uint64_t, Error> requireUnsigned( Json const& params, std::st
   return std::unexpected( badRequest( fmt::format( "Missing or invalid field: {}", name ) ) );
 }
 
+std::expected<std::uint64_t, Error> optionalUnsigned(
+    Json const& params, std::string_view name, std::uint64_t fallback, std::uint64_t low, std::uint64_t high )
+{
+  if ( !params.contains( name ) )
+  {
+    return fallback;
+  }
+  auto const given = requireUnsigned( params, name );
+  if ( given && ( *given < low || *given > high ) )
+  {
+    return std::unexpected( badRequest( fmt::format( "{} is {} to {}, not {}", name, low, high, *given ) ) );
+  }
+  return given;
+}
+
 Json paramsSchema( std::initializer_list<Param> params )
 {
   Json properties = Json::object();

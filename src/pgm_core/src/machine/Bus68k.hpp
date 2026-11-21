@@ -65,8 +65,19 @@ public:
   std::uint16_t read( std::uint32_t address, bool upper, bool lower );
   void write( std::uint32_t address, std::uint16_t value, bool upper, bool lower );
 
+  /// The 68000 has 24 address lines.
+  static constexpr std::uint32_t ADDRESS_SPACE = 0x1000000U;
+
   /// A read for the debugger and the disassembler: no device is clocked by it.
+  /// ROM, work RAM, VRAM, the palette, IGS023's registers and what the
+  /// protection shows answer; anything else reads 0.
   [[nodiscard]] std::uint16_t peek( std::uint32_t address ) const;
+
+  /// Whether a debugger can write the byte at `address`: it is in work RAM,
+  /// VRAM or the palette, and the protection does not take the address.
+  [[nodiscard]] bool isRam( std::uint32_t address ) const;
+  /// Writes that byte, with no bus cycle; nothing where isRam() is false.
+  void poke( std::uint32_t address, std::uint8_t value );
 
   [[nodiscard]] std::span<std::uint8_t const> workRam() const;
 

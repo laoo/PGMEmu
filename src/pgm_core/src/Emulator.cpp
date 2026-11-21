@@ -194,6 +194,39 @@ void Emulator::powerUp()
     }
   }
   mMachine = std::make_unique<machine::Machine>( *mBios, mCartridge ? &*mCartridge : nullptr, value );
+  if ( mTraceSize != machine::Machine::TRACE_SIZE )
+  {
+    mMachine->setTraceSize( mTraceSize );
+  }
+  mMachine->setTraceRegisters( mTraceRegisters );
+}
+
+bool Emulator::traceRegisters() const
+{
+  return mTraceRegisters;
+}
+
+void Emulator::setTraceRegisters( bool kept )
+{
+  mTraceRegisters = kept;
+  if ( mMachine )
+  {
+    mMachine->setTraceRegisters( kept );
+  }
+}
+
+std::size_t Emulator::traceSize() const
+{
+  return mTraceSize;
+}
+
+void Emulator::setTraceSize( std::size_t instructions )
+{
+  mTraceSize = std::clamp<std::size_t>( instructions, 1, machine::Machine::MAX_TRACE_SIZE );
+  if ( mMachine )
+  {
+    mMachine->setTraceSize( mTraceSize );
+  }
 }
 
 machine::Machine* Emulator::machine()

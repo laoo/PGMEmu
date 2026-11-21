@@ -141,11 +141,11 @@ The RTL simulator's own `.pgm` loader targets version 0x0010 and is not a refere
 Every capability is a method of `control::Dispatcher`
 ([0005](decisions/0005-one-control-api.md)). The method groups follow the RTL simulator:
 
-- `emu.*` (alias `sim.*`): load, reset, run frames or cycles, run until a condition, pause and
-  resume the application's own run
-- `memory.*`: read any region, write the RAMs
+- `emu.*` (alias `sim.*`): load, reset, run frames, cycles or instructions, run until a condition,
+  pause and resume the application's own run
+- `memory.*`: read any region, write the RAMs, either by the 68000's own addresses
 - `cpu.*`: for `m68k`, `z80` and `arm7`
-- `debug.*`: breakpoints for `m68k`, `z80` and `arm7`, watchpoints, trace
+- `debug.*`: breakpoints for `m68k`, `z80` and `arm7`, watchpoints, the trace and its search
 - `video.*`: screenshot, registers, decoded sprites, layers, tiles
 - `audio.*`
 - `input.*`

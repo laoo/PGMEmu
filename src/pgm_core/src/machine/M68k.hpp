@@ -13,6 +13,8 @@
 
 #include "pgm/machine/Machine.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -45,6 +47,18 @@ public:
 
   /// Whether a STOP instruction is waiting for an interrupt.
   [[nodiscard]] bool stopped() const;
+
+  /// D0-D7 then A0-A7, and the status register's flags, as Moira keeps them:
+  /// what the trace copies before every instruction.
+  void copyRegisters( std::array<std::uint32_t, 16>& to ) const
+  {
+    std::ranges::copy( reg.r, to.begin() );
+  }
+
+  [[nodiscard]] moira::StatusRegister const& statusRegister() const
+  {
+    return reg.sr;
+  }
 
   /// The instruction at `address` as text, and its length in bytes.
   [[nodiscard]] std::string disassembleAt( std::uint32_t address, int& length ) const;

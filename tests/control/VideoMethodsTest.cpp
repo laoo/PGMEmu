@@ -45,6 +45,28 @@ TEST_CASE( "video.layers turns layers off for the picture, and answers all three
   REQUIRE( call( dispatcher, "video.layers", { { "text", 1 } } ).at( "error" ).at( "code" ) == "bad_request" );
 }
 
+TEST_CASE( "video.screenshot makes each pixel as many pixels as it is told", "[control][video]" )
+{
+  Fixture const fixture;
+  pgm::Emulator emulator{ fixture.settings() };
+  Dispatcher const dispatcher{ emulator };
+  REQUIRE( call( dispatcher, "emu.load_game", { { "name", "pgm" } } ).at( "ok" ) == true );
+
+  auto const plain = call( dispatcher, "video.screenshot" ).at( "result" );
+  REQUIRE( plain.at( "width" ) == 448 );
+  REQUIRE( plain.at( "height" ) == 224 );
+  REQUIRE( plain.at( "scale" ) == 1 );
+
+  auto const large = call( dispatcher, "video.screenshot", { { "scale", 3 } } ).at( "result" );
+  REQUIRE( large.at( "width" ) == 1344 );
+  REQUIRE( large.at( "height" ) == 672 );
+  REQUIRE( large.at( "scale" ) == 3 );
+  REQUIRE( large.at( "png_base64" ).get<std::string>().starts_with( "iVBORw0KGgo" ) );
+
+  REQUIRE( call( dispatcher, "video.screenshot", { { "scale", 0 } } ).at( "error" ).at( "code" ) == "bad_request" );
+  REQUIRE( call( dispatcher, "video.screenshot", { { "scale", 9 } } ).at( "error" ).at( "code" ) == "bad_request" );
+}
+
 TEST_CASE( "video.registers and video.sprites describe IGS023's state", "[control][video]" )
 {
   Fixture const fixture;

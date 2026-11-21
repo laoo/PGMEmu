@@ -60,6 +60,57 @@ TEST_CASE( "input.press holds a control for two frames and lets it go for two", 
   REQUIRE( call( dispatcher, "input.get_state" ).at( "result" ).at( "buttons" ) == 0 );
 }
 
+TEST_CASE( "input.press holds several controls for the frames it is told, beside those already held", "[control]" )
+{
+  Fixture const fixture;
+  pgm::Emulator emulator{ fixture.settings() };
+  Dispatcher const dispatcher{ emulator };
+  REQUIRE( call( dispatcher, "emu.load_game", { { "name", "pgm" } } ).at( "ok" ) == true );
+  REQUIRE( call( dispatcher, "input.set", { { "name", "start" } } ).at( "ok" ) == true );
+
+  auto const result = call( dispatcher,
+                            "input.press",
+                            { { "buttons", { "down", "button2" } }, { "frames", 5 }, { "release_frames", 0 } } )
+                          .at( "result" );
+
+  REQUIRE( result.at( "reason" ) == "completed" );
+  REQUIRE( result.at( "frames_executed" ) == 5 );
+  // What was held before the press is held after it.
+  REQUIRE( call( dispatcher, "input.get_state" ).at( "result" ).at( "held" ) == Json::array( { "start" } ) );
+
+  REQUIRE( errorCode( call( dispatcher, "input.press", { { "buttons", { "down", "jump" } } } ) ) == "invalid_input" );
+  REQUIRE( errorCode( call( dispatcher, "input.press", { { "buttons", { 1 } } } ) ) == "bad_request" );
+  REQUIRE( errorCode( call( dispatcher, "input.press", { { "name", "up" }, { "frames", 0 } } ) ) == "bad_request" );
+  REQUIRE( errorCode( call( dispatcher, "input.press", { { "name", "up" }, { "release_frames", 601 } } ) ) ==
+           "bad_request" );
+  REQUIRE( errorCode( call( dispatcher, "input.press" ) ) == "bad_request" );
+}
+
+TEST_CASE( "input.hold holds exactly the controls listed, and input.get_state names them", "[control]" )
+{
+  Fixture const fixture;
+  pgm::Emulator emulator{ fixture.settings() };
+  Dispatcher const dispatcher{ emulator };
+  REQUIRE( errorCode( call( dispatcher, "input.hold", { { "buttons", Json::array() } } ) ) == "not_loaded" );
+  REQUIRE( call( dispatcher, "emu.load_game", { { "name", "pgm" } } ).at( "ok" ) == true );
+  REQUIRE( call( dispatcher, "input.set", { { "name", "coin" } } ).at( "ok" ) == true );
+
+  // A control is named once, whichever of its names asked for it.
+  auto const held = call( dispatcher, "input.hold", { { "buttons", { "start", "a", "btn1", "left" } } } );
+  REQUIRE( held.at( "result" ).at( "held" ) == Json::array( { "left", "button1", "start" } ) );
+  auto const state = call( dispatcher, "input.get_state" ).at( "result" );
+  REQUIRE( state.at( "buttons" ) == 0x10012 );
+  REQUIRE( state.at( "held" ) == held.at( "result" ).at( "held" ) );
+
+  REQUIRE( call( dispatcher, "input.hold", { { "buttons", "coin" } } ).at( "result" ).at( "held" ) ==
+           Json::array( { "coin" } ) );
+  REQUIRE( call( dispatcher, "input.hold", { { "buttons", Json::array() } } ).at( "result" ).at( "held" ).empty() );
+  REQUIRE( call( dispatcher, "input.get_state" ).at( "result" ).at( "buttons" ) == 0 );
+
+  REQUIRE( errorCode( call( dispatcher, "input.hold", { { "buttons", { "jump" } } } ) ) == "invalid_input" );
+  REQUIRE( errorCode( call( dispatcher, "input.hold" ) ) == "bad_request" );
+}
+
 TEST_CASE( "an audio capture is a WAV of what the runs between its start and stop produced", "[control]" )
 {
   Fixture const fixture;
