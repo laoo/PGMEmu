@@ -10,9 +10,10 @@ commit messages and identifiers are in English.**
 ```sh
 cmake --preset debug && cmake --build --preset debug && ctest --preset debug
 cmake --install build/release --component pgmemu --prefix build/stage   # what a release package holds; PGMEmu.app on macOS
+emcmake cmake --preset wasm && cmake --build --preset wasm      # the page and the core, build/wasm/web: python3 -m http.server -d build/wasm/web
 ```
 
-Presets: `debug`, `release`, `asan`. Never create build directories by hand;
+Presets: `debug`, `release`, `asan`, `wasm`. Never create build directories by hand;
 the presets own `build/<preset>`. The test presets run tests in parallel on
 every core; the release suite takes about 70 s. `-DPGM_BUILD_APP=OFF` at configure leaves out
 the desktop application and with it SDL3 and ImGui.
@@ -77,10 +78,12 @@ session takes one milestone by name.
 
 | Path | Contents |
 |---|---|
-| `src/pgm_core/` | The emulated machine and the control dispatcher. All logic; no SDL, ImGui, threads or file dialogs; deterministic. `moira/MoiraConfig.h` is Moira's configuration ([0009](docs/decisions/0009-moira-configuration.md)). |
+| `src/pgm_core/` | The emulated machine and the control dispatcher. All logic; no SDL, ImGui, threads, sockets or file dialogs; deterministic; compiles to WebAssembly. `moira/MoiraConfig.h` is Moira's configuration ([0009](docs/decisions/0009-moira-configuration.md)). |
 | `src/pgm_server/` | Transports onto the dispatcher: JSON-lines (stdio, TCP) and MCP. |
 | `src/pgm_cli/` | `pgmemu-cli`: headless runs, `--server`, `--mcp`, `--transcript`. Argument parsing and I/O only. |
 | `src/pgm_app/` | `pgmemu`: the SDL3 + Dear ImGui desktop frontend. |
+| `src/pgm_web/` | The WebAssembly binding (embind), built by the `wasm` preset alone. |
+| `web/` | The page on it: HTML, CSS and ES modules, copied into `build/wasm/web` beside `pgmemu.js`. |
 | `tests/` | Catch2 v3 tests, linked against `pgm_core`; `control/` also holds the protocol's recorded transcripts. |
 | `libextern/` | Third-party code carried in the tree, unmodified. Not formatted, not tidied. `libextern/README.md` is the inventory. |
 | `cmake/` | `Warnings.cmake`, `Optimisation.cmake`, `Dependencies.cmake`. |
@@ -145,7 +148,7 @@ orientation, and the config files are the authority.
 - Every hardware module's header comment names the RTL file(s) it ports and
   the MiSTer core commit they were read at.
 
-C++23, but only the subset Apple clang, GCC and MSVC all implement.
+C++23, but only the subset Apple clang, GCC, MSVC and Emscripten all implement.
 `src/pgm_core/src/PortabilityChecks.cpp` pins that subset down; extend it
 rather than discovering a gap in CI. Prefer `fmt` (via spdlog) over
 `std::format`, and avoid `std::print`, `<stacktrace>` and `std::flat_map`.

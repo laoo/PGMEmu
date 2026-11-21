@@ -36,13 +36,20 @@
       "displayName": "Visual Studio (whichever version is installed)",
       "binaryDir": "${sourceDir}/build/windows",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "wasm",
+      "inherits": "base",
+      "displayName": "WebAssembly: run as emcmake cmake --preset wasm",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "PGM_BUILD_TESTS": "OFF", "PGM_BUILD_APP": "OFF" }
     }
   ],
   "buildPresets": [
     { "name": "debug",   "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
     { "name": "asan",    "configurePreset": "asan" },
-    { "name": "windows", "configurePreset": "windows", "configuration": "Debug" }
+    { "name": "windows", "configurePreset": "windows", "configuration": "Debug" },
+    { "name": "wasm",    "configurePreset": "wasm" }
   ],
   "testPresets": [
     { "name": "debug",   "configurePreset": "debug",   "output": { "outputOnFailure": true }, "execution": { "jobs": 0 } },

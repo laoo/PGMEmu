@@ -45,6 +45,13 @@ FetchContent_Declare( httplib
   SOURCE_SUBDIR  none
   SYSTEM )
 
+# The WebAssembly build is the core alone, which needs neither the command
+# line's parser nor the HTTP server, nor threads.
+if( EMSCRIPTEN )
+  FetchContent_MakeAvailable( spdlog nlohmann_json miniz )
+  return( )
+endif( )
+
 FetchContent_MakeAvailable( CLI11 spdlog nlohmann_json miniz httplib )
 
 find_package( Threads REQUIRED )

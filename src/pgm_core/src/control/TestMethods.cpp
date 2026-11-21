@@ -204,7 +204,7 @@ void addTestMethods( Dispatcher& dispatcher, Emulator& emulator )
         Json words = Json::array();
         for ( std::uint64_t i = 0; i < count; ++i )
         {
-          words.push_back( wordAt( ram, STATUS_AT + ( i * 2 ) ) );
+          words.push_back( wordAt( ram, STATUS_AT + static_cast<std::size_t>( i * 2 ) ) );
         }
         std::uint16_t const magic = wordAt( ram, STATUS_AT );
         std::string const name{ static_cast<char>( magic >> 8U ), static_cast<char>( magic & 0xffU ) };
@@ -370,7 +370,8 @@ void addTestMethods( Dispatcher& dispatcher, Emulator& emulator )
             elapsed += step( *machine, RING_STEP );
           }
         }
-        std::size_t const count = std::min<std::size_t>( *maxBytes, link->received.size() );
+        // Where size_t is 32 bits, a browser, the smaller of the two still fits it.
+        auto const count = static_cast<std::size_t>( std::min<std::uint64_t>( *maxBytes, link->received.size() ) );
         std::vector<std::uint8_t> bytes( link->received.begin(),
                                          link->received.begin() + static_cast<std::ptrdiff_t>( count ) );
         link->received.erase( link->received.begin(), link->received.begin() + static_cast<std::ptrdiff_t>( count ) );

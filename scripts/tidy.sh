@@ -20,5 +20,7 @@ fi
 # where any run failed, which is what a finding under -warnings-as-errors
 # would be; a plain warning leaves clang-tidy's exit at 0, as it always has.
 jobs="$( getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4 )"
-find "$root/src" "$root/tests" -type f -name '*.cpp' -print0 \
+# src/pgm_web is built for WebAssembly alone, and is not in the native compile
+# database: tidy it against build/wasm's instead.
+find "$root/src" "$root/tests" -type f -name '*.cpp' -not -path '*/pgm_web/*' -print0 \
   | xargs -0 -P "$jobs" -n 1 "$tidy" -p "$db" ${extra:+"$extra"}

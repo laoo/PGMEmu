@@ -15,6 +15,9 @@ Verilator simulation of the core.
 - The window has shaders (sharp, scanlines, CRT), shows vertical games upright, maps the inputs
   of four players and their gamepads, and has rewind and run-ahead.
 - Other programs and AI agents can control it, with or without the window.
+- The core compiles to WebAssembly, and runs in a browser at
+  [laoo.github.io/PGMEmu](https://laoo.github.io/PGMEmu/): open your own BIOS and images there,
+  and they stay in your browser.
 
 ## Games and the BIOS
 
@@ -52,6 +55,49 @@ sudo apt install ninja-build libasound2-dev libpulse-dev libx11-dev libxext-dev 
 Each tagged release on GitHub has packages for macOS (Apple silicon), Linux (x64) and Windows
 (x64). The macOS application is not notarized. The first time, open it with right-click > Open,
 or run `xattr -dr com.apple.quarantine PGMEmu.app`.
+
+### WebAssembly
+
+With [Emscripten](https://emscripten.org) installed:
+
+```sh
+emcmake cmake --preset wasm && cmake --build --preset wasm
+```
+
+`build/wasm/web` is then a site of static files: the page in `web/`, with the core beside it.
+Serve it and open it:
+
+```sh
+python3 -m http.server -d build/wasm/web 8000      # then http://localhost:8000
+```
+
+- Open the BIOS, `pgm.zip`, with BIOS, and a game's `.pgm` image with Open game, or drop them on
+  the screen.
+- The page keeps the BIOS, the images, each game's battery-backed RAM and the save states in the
+  browser, and loads the last game again when it is opened. `?rom=URL`, once for each file,
+  fetches the BIOS or an image instead.
+- The keys are the window's (below) for players 1 and 2, rebound in Keys; gamepads work too.
+  Sound starts at the first click or key.
+- Control protocol takes a request as one line of JSON, and shows the answer.
+
+`pgmemu.js` and `pgmemu.wasm` are an ES module that another page can use too. It writes the BIOS
+and an image into the module's file system and drives it:
+
+```js
+import createPgmEmu from "./pgmemu.js";
+const module = await createPgmEmu();
+const bytes = async ( url ) => new Uint8Array( await ( await fetch( url ) ).arrayBuffer() );
+module.FS.mkdir( "/bios" );
+module.FS.writeFile( "/bios/pgm.zip", await bytes( "pgm.zip" ) );
+module.FS.writeFile( "/game.pgm", await bytes( "orlegend.pgm" ) );
+const emu = new module.PgmEmu();
+emu.handle( '{"id":1,"method":"emu.set_bios","params":{"sources":["/bios/pgm.zip"]}}' );   // the control protocol
+emu.load( "/game.pgm", "" );       // "" runs the game as its image says; or a region, "JAPN"
+emu.runFrame();                    // 59.19 a second
+const rgba = emu.picture();        // module.SCREEN_WIDTH by module.SCREEN_HEIGHT, RGBA; emu.vertical() says to turn it
+const sound = emu.audio();         // interleaved stereo, 16-bit, at emu.audioRate()
+emu.setInputs( 1 << 5, 0, 0, 0 );  // player 1's button 1; the board's input words IN0 to IN3, as web/input.js makes them
+```
 
 ## Running
 

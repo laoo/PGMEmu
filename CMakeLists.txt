@@ -27,6 +27,15 @@ include( Dependencies )
 add_subdirectory( libextern )
 
 add_subdirectory( src/pgm_core )
+
+# In a browser there is no socket, no thread and no command line: the
+# WebAssembly build is the core and its binding to JavaScript, nothing else
+# (docs/decisions/0025-the-core-compiles-to-webassembly.md).
+if( EMSCRIPTEN )
+  add_subdirectory( src/pgm_web )
+  return( )
+endif( )
+
 add_subdirectory( src/pgm_server )
 add_subdirectory( src/pgm_cli )
 

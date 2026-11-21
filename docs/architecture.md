@@ -21,6 +21,9 @@ and why the boundaries sit where they do. The reasoning behind individual choice
                                  │                  │                 │
                      pgm_server transports     pgmemu (GUI)      pgmemu-cli (headless)
                   JSON-lines stdio/TCP, MCP    SDL3 + ImGui      batch runs, --server, --mcp
+
+                                    pgm_web (WebAssembly): the core and an embind binding,
+                                    under the page in web/
 ```
 
 The core is a library with no SDL, no ImGui, no threads and no file dialogs, and it is
@@ -33,6 +36,8 @@ RAM. Everything else is a client of it. The boundary is drawn for three reasons:
   possible.
 - **Agent use.** An agent session reaches the same machine the GUI shows, through the same
   dispatcher.
+- **The browser.** The core compiles to WebAssembly as it is
+  ([0025](decisions/0025-the-core-compiles-to-webassembly.md)).
 
 ## Emulated time
 
@@ -156,6 +161,7 @@ The transports are thin, and none adds a capability of its own:
 
 - JSON-lines on stdio (`pgmemu-cli --server`) and TCP (`pgmemu --server tcp:PORT`)
 - MCP on stdio (`pgmemu-cli --mcp`) and HTTP (`pgmemu --mcp-http PORT`)
+- the WebAssembly binding's `handle()`, a request in and its answer out as text
 
 A request from a GUI-attached transport is executed on the emulation thread between two slices,
 so the person at the GUI watches what the agent does.
@@ -213,6 +219,14 @@ watchpoint that a frame reaches sets it too, so the window stops where the debug
 - protection state
 - trace
 - PGMTest status
+
+## The page
+
+`web/` is a page on the WebAssembly build: plain modules, a canvas, an AudioWorklet, the keys and
+the gamepads ([0026](decisions/0026-the-page-is-plain-modules.md)). It is the desktop frontend's
+pacing, shape and default controls again, on one thread: the browser's frame callback runs the
+frames the host's clock says are owed. What the binding does not give it every frame, it asks the
+control protocol for. The files it is given, it keeps in IndexedDB.
 
 ## Save states
 
