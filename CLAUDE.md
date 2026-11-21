@@ -50,6 +50,8 @@ ctest --preset release -L control                   # the protocol's recorded tr
 ./scripts/benchmark.sh                              # headless speed of every game
 ./scripts/measure-lag.py                            # the frame each game first answers a control on, about 6 min
 ./scripts/compile-shaders.sh                        # the screen's shaders, after changing their GLSL (brew install glslang spirv-cross)
+./scripts/publish-site.sh                           # build the WebAssembly page into build/site, and stop (brew install emscripten)
+./scripts/publish-site.sh --publish                 # the same, pushed to gh-pages; only when the owner asks
 ./scripts/fetch-680x0-tests.sh                      # the SingleStepTests 68000 suite
 ./scripts/fetch-z80-tests.sh                        # the SingleStepTests Z80 suite, 1.4 GB to fetch
 ./scripts/fetch-arm7tdmi-tests.sh                   # the SingleStepTests ARM7TDMI suite, 0.9 GB

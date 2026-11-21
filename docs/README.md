@@ -74,6 +74,7 @@ it, never "at the end of the session".
 - [0024: The optimised configurations are -O3 with link-time optimisation](decisions/0024-release-builds-are-o3-with-lto.md)
 - [0025: The core compiles to WebAssembly](decisions/0025-the-core-compiles-to-webassembly.md)
 - [0026: The page is plain modules on pgm_web, and keeps its files in IndexedDB](decisions/0026-the-page-is-plain-modules.md)
+- [0027: The WebAssembly page is published on gh-pages, by hand](decisions/0027-the-page-is-published-on-gh-pages-by-hand.md)
 
 ### Hardware
 - [Differences](hardware/differences.md): where the emulator departs from the RTL, and the RTL from the board

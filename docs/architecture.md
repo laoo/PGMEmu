@@ -227,6 +227,8 @@ the gamepads ([0026](decisions/0026-the-page-is-plain-modules.md)). It is the de
 pacing, shape and default controls again, on one thread: the browser's frame callback runs the
 frames the host's clock says are owed. What the binding does not give it every frame, it asks the
 control protocol for. The files it is given, it keeps in IndexedDB.
+`scripts/publish-site.sh` puts it on GitHub Pages
+([0027](decisions/0027-the-page-is-published-on-gh-pages-by-hand.md)).
 
 ## Save states
 
